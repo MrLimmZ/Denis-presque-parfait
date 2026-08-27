@@ -8,7 +8,10 @@
 </head>
 <body>
   <main class="wrap">
-    <h1>Un Denis Presque Parfait</h1>
+    <div class="header-row">
+      <h1>Un Denis Presque Parfait</h1>
+      <button id="share-btn" class="share-btn" title="Partager ce lien">🔗</button>
+    </div>
     <p class="status" id="status">connexion...</p>
     <div class="value-card">
       <span class="label">Valeur en direct</span>
@@ -25,6 +28,29 @@
       onOpen: () => (statusEl.textContent = "connecté"),
       onClose: () => (statusEl.textContent = "déconnecté, reconnexion..."),
       onValue: (v) => (valueEl.textContent = v || "—"),
+    });
+
+    // Partage du lien courant (fonctionne aussi bien en Ingress qu'en accès direct :8099)
+    const shareBtn = document.getElementById("share-btn");
+    shareBtn.addEventListener("click", async () => {
+      const url = window.location.href;
+
+      if (navigator.share) {
+        try {
+          await navigator.share({ title: "Un Denis Presque Parfait", url });
+        } catch {
+          // l'utilisateur a annulé le partage, on ne fait rien
+        }
+      } else {
+        // fallback : copie dans le presse-papier (desktop, ou navigateurs sans Web Share API)
+        try {
+          await navigator.clipboard.writeText(url);
+          shareBtn.textContent = "✅";
+          setTimeout(() => (shareBtn.textContent = "🔗"), 1500);
+        } catch {
+          alert(url); // dernier recours si le presse-papier est bloqué
+        }
+      }
     });
   </script>
 </body>

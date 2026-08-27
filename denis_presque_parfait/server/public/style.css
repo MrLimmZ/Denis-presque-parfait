@@ -83,3 +83,24 @@ input[type="text"]:focus {
   font-size: 0.8rem;
   color: var(--muted);
 }
+
+.header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.share-btn {
+  background: none;
+  border: none;
+  font-size: 1.3rem;
+  cursor: pointer;
+  padding: 4px 8px;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+
+.share-btn:hover {
+  opacity: 1;
+}
