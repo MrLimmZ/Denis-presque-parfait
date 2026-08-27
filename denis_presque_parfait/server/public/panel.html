@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Panel - Un Denis Presque Parfait</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="wrap">
+    <h1>Panel admin</h1>
+    <p class="status" id="status">connexion...</p>
+
+    <label class="field">
+      <span class="label">Valeur (test live)</span>
+      <input id="input" type="text" placeholder="Tape quelque chose..." autocomplete="off" />
+    </label>
+
+    <p class="hint">Chaque frappe est sauvegardée et diffusée en direct à la vue visiteur.</p>
+  </main>
+
+  <script src="client.js"></script>
+  <script>
+    const inputEl = document.getElementById("input");
+    const statusEl = document.getElementById("status");
+    let ws;
+    let isRemoteUpdate = false;
+
+    ws = connectWS({
+      onOpen: () => (statusEl.textContent = "connecté"),
+      onClose: () => (statusEl.textContent = "déconnecté, reconnexion..."),
+      onValue: (v) => {
+        // évite de renvoyer en boucle une valeur reçue du serveur
+        isRemoteUpdate = true;
+        inputEl.value = v || "";
+        isRemoteUpdate = false;
+      },
+    });
+
+    // debounce léger pour ne pas spammer le serveur à chaque frappe
+    let debounceTimer = null;
+    inputEl.addEventListener("input", () => {
+      if (isRemoteUpdate) return;
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        ws.send(JSON.stringify({ type: "update", value: inputEl.value }));
+      }, 200);
+    });
+  </script>
+</body>
+</html>

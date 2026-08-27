@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Un Denis Presque Parfait</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="wrap">
+    <h1>Un Denis Presque Parfait</h1>
+    <p class="status" id="status">connexion...</p>
+    <div class="value-card">
+      <span class="label">Valeur en direct</span>
+      <span class="value" id="value">—</span>
+    </div>
+  </main>
+
+  <script src="client.js"></script>
+  <script>
+    const valueEl = document.getElementById("value");
+    const statusEl = document.getElementById("status");
+
+    connectWS({
+      onOpen: () => (statusEl.textContent = "connecté"),
+      onClose: () => (statusEl.textContent = "déconnecté, reconnexion..."),
+      onValue: (v) => (valueEl.textContent = v || "—"),
+    });
+  </script>
+</body>
+</html>
