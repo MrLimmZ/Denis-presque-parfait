@@ -6,12 +6,17 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "nodemon index.js"
+    "dev": "concurrently \"npm:watch:css\" \"npm:dev:server\"",
+    "dev:server": "nodemon index.js",
+    "watch:css": "sass --watch public/scss/main.scss:public/style.css",
+    "build:css": "sass public/scss/main.scss:public/style.css --no-source-map"
   },
   "devDependencies": {
+    "concurrently": "^9.0.0",
     "connect-livereload": "^0.6.1",
     "livereload": "^0.10.3",
-    "nodemon": "^3.1.7"
+    "nodemon": "^3.1.7",
+    "sass": "^1.79.0"
   },
   "dependencies": {
     "better-sqlite3": "^11.3.0",

@@ -7,45 +7,389 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <main class="wrap">
-    <h1>Panel admin</h1>
-    <p class="status" id="status">connexion...</p>
+  <main class="wrap is-ready">
+    <div class="header-row">
+      <h1>Panel admin</h1>
+      <button id="reset-db-btn" class="reset-db-btn" title="Réinitialiser toute la base">🗑️ Reset DB</button>
+    </div>
 
-    <label class="field">
-      <span class="label">Valeur (test live)</span>
-      <input id="input" type="text" placeholder="Tape quelque chose..." autocomplete="off" />
-    </label>
+    <section class="participants-admin">
+      <span class="label">Participants</span>
 
-    <p class="hint">Chaque frappe est sauvegardée et diffusée en direct à la vue visiteur.</p>
+      <form id="participant-form" class="participant-form">
+        <input id="participant-name-input" type="text" placeholder="Nom du participant" autocomplete="off" required />
+        <button type="submit" class="share-copy">Ajouter</button>
+      </form>
+
+      <ul class="participant-admin-list" id="participant-admin-list"></ul>
+    </section>
+
+    <section class="assignment-admin">
+      <span class="label">Assignation</span>
+      <p class="hint">Glisse un participant sur une journée pour l'assigner (une seule personne par jour, un seul jour par personne).</p>
+
+      <div class="draggable-participants" id="draggable-participants"></div>
+
+      <div class="calendar" id="assignment-calendar"></div>
+    </section>
+
+    <section class="criteria-admin">
+      <span class="label">Critères de notation</span>
+      <p class="hint">Définis les critères et la note maximale de chacun. L'ordre se verrouille dès qu'une note existe.</p>
+
+      <form id="criterion-form" class="criterion-form">
+        <input id="criterion-label-input" type="text" placeholder="Nom du critère (ex: Le goût)" autocomplete="off" required />
+        <input id="criterion-max-input" type="number" min="2" max="20" value="5" required />
+        <button type="submit" class="share-copy">Ajouter</button>
+      </form>
+
+      <ul class="criterion-admin-list" id="criterion-admin-list"></ul>
+    </section>
+
+    <section class="votes-admin">
+      <span class="label">Notes reçues</span>
+
+      <select id="votes-target-select" class="votes-target-select">
+        <option value="" disabled selected>Choisir un cuisinier</option>
+      </select>
+
+      <div id="votes-result"></div>
+    </section>
   </main>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="client.js"></script>
+  <script src="avatar.js"></script>
+  <script src="share.js"></script>
+  <script src="calendar.js"></script>
   <script>
-    const inputEl = document.getElementById("input");
-    const statusEl = document.getElementById("status");
-    let ws;
-    let isRemoteUpdate = false;
+    initShareButton({ title: "Panel - Un Denis Presque Parfait" });
 
-    ws = connectWS({
-      onOpen: () => (statusEl.textContent = "connecté"),
-      onClose: () => (statusEl.textContent = "déconnecté, reconnexion..."),
-      onValue: (v) => {
-        // évite de renvoyer en boucle une valeur reçue du serveur
-        isRemoteUpdate = true;
-        inputEl.value = v || "";
-        isRemoteUpdate = false;
+    const votesSelectEl = document.getElementById("votes-target-select");
+    const votesResultEl = document.getElementById("votes-result");
+
+    let currentParticipants = [];
+    let currentCriteria = [];
+    let currentVotes = [];
+
+    const ws = connectWS({
+      onParticipants: (list) => {
+        currentParticipants = list || [];
+        renderParticipants(currentParticipants);
+        renderDraggableParticipants(currentParticipants);
+        renderVotesTargetOptions(currentParticipants);
+      },
+      onAssignmentsList: (month, list) => calendar.setAssignments(month, list),
+      onAssignmentUpdate: (date, participantId, participantName, hasVotes, avatarIcon, avatarColor) =>
+        calendar.applyUpdate(date, participantId, participantName, hasVotes, avatarIcon, avatarColor),
+      onAssignmentError: (message) => alert(message),
+      onAssignmentForParticipant: (participantId, date) => renderVotesForParticipantAfterDateLookup(participantId, date),
+      onCriteria: (list) => {
+        currentCriteria = list || [];
+        renderCriteria(currentCriteria);
+      },
+      onCriteriaError: (message) => alert(message),
+      onVotesList: (list) => {
+        currentVotes = list || [];
+        const selectedId = votesSelectEl.value;
+        if (selectedId) renderVotesForParticipant(Number(selectedId));
+      },
+      onDbResetDone: () => {
+        votesResultEl.innerHTML = "";
+        votesSelectEl.value = "";
+        ws.send(JSON.stringify({ type: "assignments:list", month: calendar.getCurrentMonthKey() }));
+        alert("Base de données réinitialisée.");
       },
     });
 
-    // debounce léger pour ne pas spammer le serveur à chaque frappe
-    let debounceTimer = null;
-    inputEl.addEventListener("input", () => {
-      if (isRemoteUpdate) return;
-      clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        ws.send(JSON.stringify({ type: "update", value: inputEl.value }));
-      }, 200);
+    ws.send(JSON.stringify({ type: "votes:list" }));
+
+    // --- Reset DB ---
+    document.getElementById("reset-db-btn").addEventListener("click", () => {
+      const confirmation = prompt(
+        "Cette action supprime DÉFINITIVEMENT tous les participants, assignations, critères et notes.\n\nTape RESET pour confirmer :"
+      );
+      if (confirmation === "RESET") {
+        ws.send(JSON.stringify({ type: "db:reset" }));
+      }
     });
+
+    // --- Participants ---
+    const formEl = document.getElementById("participant-form");
+    const nameInputEl = document.getElementById("participant-name-input");
+    const listEl = document.getElementById("participant-admin-list");
+
+    formEl.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const name = nameInputEl.value.trim();
+      if (!name) return;
+      ws.send(JSON.stringify({ type: "participants:add", name }));
+      nameInputEl.value = "";
+    });
+
+    function renderParticipants(list) {
+      listEl.innerHTML = "";
+      (list || []).forEach((p) => {
+        const li = document.createElement("li");
+        li.className = "participant-admin-item";
+
+        const topRow = document.createElement("div");
+        topRow.className = "participant-admin-top-row";
+
+        topRow.appendChild(createAvatarElement(p, "sm"));
+
+        const nameInput = document.createElement("input");
+        nameInput.type = "text";
+        nameInput.value = p.name;
+        nameInput.className = "participant-admin-name";
+        nameInput.addEventListener("change", () => {
+          const newName = nameInput.value.trim();
+          if (newName && newName !== p.name) {
+            ws.send(JSON.stringify({ type: "participants:rename", id: p.id, name: newName }));
+          }
+        });
+        topRow.appendChild(nameInput);
+
+        const avatarToggle = document.createElement("details");
+        avatarToggle.className = "avatar-toggle";
+        const summary = document.createElement("summary");
+        summary.textContent = "🎨";
+        summary.title = "Changer l'avatar";
+        avatarToggle.appendChild(summary);
+
+        const pickerContainer = document.createElement("div");
+        avatarToggle.appendChild(pickerContainer);
+        avatarToggle.addEventListener("toggle", () => {
+          if (avatarToggle.open) {
+            createAvatarPicker({
+              container: pickerContainer,
+              icon: p.avatar_icon,
+              color: p.avatar_color,
+              onChange: ({ icon, color }) => {
+                ws.send(JSON.stringify({ type: "participants:avatar", id: p.id, icon, color }));
+              },
+            });
+          }
+        });
+        topRow.appendChild(avatarToggle);
+
+        const deleteBtn = document.createElement("button");
+        deleteBtn.className = "participant-admin-delete";
+        deleteBtn.textContent = "Supprimer";
+        deleteBtn.addEventListener("click", () => {
+          if (confirm(`Supprimer ${p.name} ?`)) {
+            ws.send(JSON.stringify({ type: "participants:delete", id: p.id }));
+          }
+        });
+        topRow.appendChild(deleteBtn);
+
+        if (p.locked) {
+          const lockBadge = document.createElement("span");
+          lockBadge.className = "locked-badge";
+          lockBadge.textContent = "🔒";
+          lockBadge.title = "Déjà noté";
+          topRow.appendChild(lockBadge);
+        }
+
+        li.appendChild(topRow);
+        listEl.appendChild(li);
+      });
+    }
+
+    // --- Pastilles à glisser + calendrier assignation ---
+    const draggableEl = document.getElementById("draggable-participants");
+
+    function renderDraggableParticipants(list) {
+      draggableEl.innerHTML = "";
+      (list || []).forEach((p) => {
+        const pill = document.createElement("div");
+        pill.className = "draggable-pill";
+
+        pill.appendChild(createAvatarElement(p, "xs"));
+        const nameSpan = document.createElement("span");
+        nameSpan.textContent = p.name;
+        pill.appendChild(nameSpan);
+
+        if (p.locked) {
+          pill.classList.add("draggable-pill-locked");
+          pill.title = "Déjà noté, non déplaçable";
+          pill.draggable = false;
+        } else {
+          pill.draggable = true;
+          pill.addEventListener("dragstart", (e) => {
+            e.dataTransfer.setData("text/participant-id", p.id);
+          });
+        }
+
+        draggableEl.appendChild(pill);
+      });
+    }
+
+    const calendar = createCalendar({
+      container: document.getElementById("assignment-calendar"),
+      editable: true,
+      onAssign: (date, participantId) => {
+        ws.send(JSON.stringify({ type: "assignments:set", date, participant_id: participantId }));
+      },
+      onUnassign: (date) => {
+        ws.send(JSON.stringify({ type: "assignments:delete", date }));
+      },
+      onMonthChange: (month) => {
+        ws.send(JSON.stringify({ type: "assignments:list", month }));
+      },
+    });
+    calendar.init();
+
+    // --- Critères de notation ---
+    const criterionFormEl = document.getElementById("criterion-form");
+    const criterionLabelInput = document.getElementById("criterion-label-input");
+    const criterionMaxInput = document.getElementById("criterion-max-input");
+    const criterionListEl = document.getElementById("criterion-admin-list");
+
+    criterionFormEl.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const label = criterionLabelInput.value.trim();
+      const maxNote = Number(criterionMaxInput.value);
+      if (!label || !maxNote) return;
+      ws.send(JSON.stringify({ type: "criteria:add", label, max_note: maxNote }));
+      criterionLabelInput.value = "";
+      criterionMaxInput.value = 5;
+    });
+
+    function renderCriteria(list) {
+      criterionListEl.innerHTML = "";
+      (list || []).forEach((c, index) => {
+        const li = document.createElement("li");
+        li.className = "criterion-admin-item";
+        if (c.has_votes) li.classList.add("criterion-admin-item-locked");
+
+        const labelInput = document.createElement("input");
+        labelInput.type = "text";
+        labelInput.value = c.label;
+        labelInput.className = "criterion-admin-label";
+        labelInput.addEventListener("change", () => {
+          const newLabel = labelInput.value.trim();
+          if (newLabel) {
+            ws.send(JSON.stringify({ type: "criteria:update", id: c.id, label: newLabel, max_note: c.max_note }));
+          }
+        });
+
+        const maxInput = document.createElement("input");
+        maxInput.type = "number";
+        maxInput.min = 2;
+        maxInput.max = 20;
+        maxInput.value = c.max_note;
+        maxInput.className = "criterion-admin-max";
+        maxInput.addEventListener("change", () => {
+          const newMax = Number(maxInput.value);
+          if (newMax) {
+            ws.send(JSON.stringify({ type: "criteria:update", id: c.id, label: c.label, max_note: newMax }));
+          }
+        });
+
+        const upBtn = document.createElement("button");
+        upBtn.className = "criterion-admin-move";
+        upBtn.textContent = "↑";
+        upBtn.disabled = index === 0 || c.has_votes;
+        upBtn.title = c.has_votes ? "Verrouillé (déjà noté)" : "";
+        upBtn.addEventListener("click", () => {
+          ws.send(JSON.stringify({ type: "criteria:move", id: c.id, direction: "up" }));
+        });
+
+        const downBtn = document.createElement("button");
+        downBtn.className = "criterion-admin-move";
+        downBtn.textContent = "↓";
+        downBtn.disabled = index === list.length - 1 || c.has_votes;
+        downBtn.title = c.has_votes ? "Verrouillé (déjà noté)" : "";
+        downBtn.addEventListener("click", () => {
+          ws.send(JSON.stringify({ type: "criteria:move", id: c.id, direction: "down" }));
+        });
+
+        const deleteBtn = document.createElement("button");
+        deleteBtn.className = "participant-admin-delete";
+        deleteBtn.textContent = "Supprimer";
+        deleteBtn.disabled = c.has_votes;
+        deleteBtn.title = c.has_votes ? "Verrouillé (déjà noté)" : "";
+        deleteBtn.addEventListener("click", () => {
+          if (confirm(`Supprimer le critère "${c.label}" ?`)) {
+            ws.send(JSON.stringify({ type: "criteria:delete", id: c.id }));
+          }
+        });
+
+        li.appendChild(upBtn);
+        li.appendChild(downBtn);
+        li.appendChild(labelInput);
+        li.appendChild(maxInput);
+        li.appendChild(deleteBtn);
+        criterionListEl.appendChild(li);
+      });
+    }
+
+    // --- Notes reçues : sélecteur de cuisinier + tableau fusionné ---
+
+    function renderVotesTargetOptions(participants) {
+      const previousValue = votesSelectEl.value;
+      votesSelectEl.innerHTML = `<option value="" disabled ${!previousValue ? "selected" : ""}>Choisir un cuisinier</option>`;
+      (participants || []).forEach((p) => {
+        const opt = document.createElement("option");
+        opt.value = p.id;
+        opt.textContent = p.name;
+        votesSelectEl.appendChild(opt);
+      });
+      if (previousValue) votesSelectEl.value = previousValue;
+    }
+
+    votesSelectEl.addEventListener("change", () => {
+      const id = Number(votesSelectEl.value);
+      if (!id) return;
+      renderVotesForParticipant(id);
+    });
+
+    function renderVotesForParticipant(participantId) {
+      const rows = currentVotes.filter((v) => v.target_participant_id === participantId);
+
+      if (rows.length === 0) {
+        ws.send(JSON.stringify({ type: "assignments:get_for_participant", participant_id: participantId }));
+        votesResultEl.innerHTML = `<p class="hint">Chargement...</p>`;
+        return;
+      }
+
+      renderVotesTable(rows);
+    }
+
+    function renderVotesForParticipantAfterDateLookup(participantId, date) {
+      const rows = currentVotes.filter((v) => v.target_participant_id === participantId);
+      if (rows.length > 0) {
+        renderVotesTable(rows);
+        return;
+      }
+      votesResultEl.innerHTML = date
+        ? `<p class="hint">Notation prévue le ${formatDateFr(date)}.</p>`
+        : `<p class="hint">Pas encore de date assignée.</p>`;
+    }
+
+    function renderVotesTable(rows) {
+      const voters = [...new Map(rows.map((r) => [r.voter_participant_id, r.voter_name])).entries()];
+      const criteriaInRows = currentCriteria.length
+        ? currentCriteria
+        : [...new Map(rows.map((r) => [r.criterion_id, { id: r.criterion_id, label: r.criterion_label, max_note: r.max_note }])).values()];
+
+      let html = `<table class="votes-table"><thead><tr><th>Votant</th>`;
+      criteriaInRows.forEach((c) => (html += `<th>${c.label}</th>`));
+      html += `</tr></thead><tbody>`;
+
+      voters.forEach(([voterId, voterName]) => {
+        html += `<tr><td>${voterName}</td>`;
+        criteriaInRows.forEach((c) => {
+          const match = rows.find((r) => r.voter_participant_id === voterId && r.criterion_id === c.id);
+          html += `<td>${match ? `${match.score} / ${match.max_note}` : "—"}</td>`;
+        });
+        html += `</tr>`;
+      });
+
+      html += `</tbody></table>`;
+      votesResultEl.innerHTML = html;
+    }
   </script>
 </body>
 </html>

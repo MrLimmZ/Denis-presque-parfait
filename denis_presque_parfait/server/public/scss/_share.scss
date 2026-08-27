@@ -1,0 +1,227 @@
+// --- Bouton flottant fixe (générique), présent sur toutes les pages ---
+
+.fab {
+  position: fixed;
+  top: 16px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 1.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 900;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  transition: border-color 0.15s;
+
+  &:hover {
+    border-color: var(--accent);
+  }
+}
+
+.fab-right {
+  right: 16px;
+}
+
+.fab-left {
+  left: 16px;
+}
+
+.share-fab {
+  @extend .fab;
+  @extend .fab-right;
+}
+
+.share-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 10, 12, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  z-index: 1000;
+  padding: 16px;
+
+  &.open {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  @media (min-width: 480px) {
+    align-items: center;
+  }
+}
+
+.share-card {
+  position: relative;
+  width: 100%;
+  max-width: 400px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 20px 20px 12px 12px;
+  overflow: hidden;
+  transform: translateY(16px);
+  transition: transform 0.2s ease;
+
+  .share-overlay.open & {
+    transform: translateY(0);
+  }
+
+  @media (min-width: 480px) {
+    border-radius: 20px;
+  }
+}
+
+.share-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 10, 12, 0.55);
+  backdrop-filter: blur(2px);
+  border: none;
+  border-radius: 50%;
+  color: var(--text);
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 1;
+
+  &:hover {
+    background: rgba(10, 10, 12, 0.8);
+  }
+}
+
+.share-illustration {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  background: var(--bg);
+  position: relative;
+  overflow: hidden;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: top;
+    display: block;
+  }
+}
+
+.share-screenshot-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.share-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: share-spin 0.7s linear infinite;
+}
+
+@keyframes share-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.share-body {
+  padding: 20px 24px 24px;
+}
+
+.share-eyebrow {
+  display: block;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+
+.share-title {
+  margin: 0 0 20px;
+  font-size: 1.15rem;
+}
+
+.share-url-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 10px 10px 14px;
+  margin-bottom: 18px;
+}
+
+.share-url {
+  flex: 1;
+  font-size: 0.78rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.share-copy {
+  flex-shrink: 0;
+  background: var(--accent);
+  color: #1a1508;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+}
+
+.share-options {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.share-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 8px;
+  color: var(--text);
+  font-size: 0.72rem;
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--accent);
+  }
+}
+
+.share-option-icon {
+  font-size: 1.3rem;
+}

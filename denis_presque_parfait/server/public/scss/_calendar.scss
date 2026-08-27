@@ -1,0 +1,166 @@
+.calendar {
+  margin-top: 12px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px;
+}
+
+.calendar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.calendar-month-label {
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.calendar-nav {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  width: 30px;
+  height: 30px;
+  cursor: pointer;
+  font-size: 0.9rem;
+
+  &:hover {
+    border-color: var(--accent);
+  }
+}
+
+.calendar-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  margin-bottom: 6px;
+
+  span {
+    text-align: center;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+  }
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.calendar-day {
+  aspect-ratio: 1;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+  transition: border-color 0.1s;
+}
+
+.calendar-day-empty {
+  background: transparent;
+  border: none;
+}
+
+.calendar-day-past {
+  opacity: 0.55;
+}
+
+.calendar-day-dragover {
+  border-color: var(--accent);
+}
+
+.calendar-day-number {
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
+.calendar-chip {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  background: var(--accent);
+  color: #1a1508;
+  border-radius: 5px;
+  padding: 2px 4px;
+  font-size: 0.62rem;
+  font-weight: 600;
+  line-height: 1.2;
+  overflow: hidden;
+
+  .avatar {
+    background: rgba(255, 255, 255, 0.3) !important;
+  }
+}
+
+.calendar-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.calendar-chip-done {
+  background: #4a8f6a;
+  color: #eafff2;
+}
+
+.calendar-chip-missed {
+  background: #c9564f;
+  color: #ffecea;
+}
+
+.calendar-chip-remove {
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 0.75rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.draggable-participants {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.draggable-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 6px 14px 6px 6px;
+  font-size: 0.85rem;
+  cursor: grab;
+  user-select: none;
+
+  &:active {
+    cursor: grabbing;
+  }
+}
+
+.draggable-pill-locked {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.assignment-admin,
+.assignment-view {
+  margin-top: 28px;
+}

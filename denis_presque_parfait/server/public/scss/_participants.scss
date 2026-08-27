@@ -1,0 +1,99 @@
+// --- Vue publique : liste cliquable ---
+
+.participants-section {
+  margin-top: 8px;
+}
+
+.participants-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.participant-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 16px;
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s;
+
+  &:hover {
+    border-color: var(--accent);
+  }
+}
+
+// --- Vue admin : formulaire + liste éditable ---
+
+.participants-admin {
+  margin-top: 28px;
+}
+
+.participant-form {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  margin-bottom: 16px;
+
+  input[type="text"] {
+    flex: 1;
+  }
+}
+
+.participant-admin-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.participant-admin-item {
+  display: flex;
+  flex-direction: column;
+}
+
+.participant-admin-top-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.participant-admin-name {
+  flex: 1;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--text);
+  font-size: 0.9rem;
+
+  &:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+}
+
+.participant-admin-delete {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+
+  &:hover {
+    border-color: #d9534f;
+    color: #d9534f;
+  }
+}

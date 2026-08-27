@@ -1,0 +1,183 @@
+// --- Écran d'accroche avant le countdown ---
+
+.results-intro {
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 12px;
+  padding: 40px 0;
+}
+
+.results-intro-eyebrow {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+}
+
+.results-intro-title {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.results-intro-description {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  max-width: 320px;
+}
+
+.results-intro-cta {
+  width: auto;
+  padding: 14px 28px;
+}
+
+// --- Countdown 3-2-1 ---
+
+.countdown-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1100;
+}
+
+.countdown-number {
+  font-size: 6rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.countdown-pulse {
+  animation: countdown-pulse 0.8s ease;
+}
+
+@keyframes countdown-pulse {
+  0% {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  30% {
+    transform: scale(1.1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+// --- Podium ---
+
+.podium {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 10px;
+  margin: 32px 0;
+}
+
+.podium-block {
+  flex: 1;
+  max-width: 120px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px 12px 4px 4px;
+  padding: 16px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+}
+
+.podium-medal {
+  font-size: 1.6rem;
+}
+
+.podium-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.podium-score {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.podium-rank-1 {
+  height: 160px;
+  border-color: #d4af37;
+  justify-content: flex-end;
+}
+
+.podium-rank-2 {
+  height: 120px;
+  border-color: #b0b3ba;
+  justify-content: flex-end;
+}
+
+.podium-rank-3 {
+  height: 96px;
+  border-color: #b5651d;
+  justify-content: flex-end;
+}
+
+// --- Classement complet, cliquable (accordéon exclusif) ---
+
+.ranking-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+.ranking-item {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.ranking-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: none;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.ranking-row .avatar {
+  margin-right: 2px;
+}
+
+.ranking-position {
+  width: 24px;
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.ranking-name {
+  flex: 1;
+  font-size: 0.95rem;
+}
+
+.ranking-score {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.ranking-detail {
+  padding: 0 16px 16px;
+  overflow-x: auto;
+}

@@ -7,51 +7,102 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <main class="wrap">
-    <div class="header-row">
-      <h1>Un Denis Presque Parfait</h1>
-      <button id="share-btn" class="share-btn" title="Partager ce lien">🔗</button>
-    </div>
-    <p class="status" id="status">connexion...</p>
-    <div class="value-card">
-      <span class="label">Valeur en direct</span>
-      <span class="value" id="value">—</span>
+  <div class="page-loader" id="page-loader">
+    <span class="share-spinner"></span>
+  </div>
+
+  <div id="app-logo"></div>
+
+  <main class="wrap" id="main">
+    <h1>Un Denis Presque Parfait</h1>
+
+    <div class="participants-section">
+      <span class="label">Qui es-tu ?</span>
+      <div class="participants-list" id="participants-list">
+        <p class="hint" id="participants-empty">Aucun participant pour le moment.</p>
+      </div>
     </div>
   </main>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="client.js"></script>
+  <script src="avatar.js"></script>
+  <script src="logo.js"></script>
+  <script src="share.js"></script>
   <script>
-    const valueEl = document.getElementById("value");
-    const statusEl = document.getElementById("status");
+    initShareButton({ title: "Un Denis Presque Parfait" });
+    initLogo();
 
-    connectWS({
-      onOpen: () => (statusEl.textContent = "connecté"),
-      onClose: () => (statusEl.textContent = "déconnecté, reconnexion..."),
-      onValue: (v) => (valueEl.textContent = v || "—"),
-    });
+    const loadStart = Date.now();
+    const existingParticipant = getCookie("participant_id");
 
-    // Partage du lien courant (fonctionne aussi bien en Ingress qu'en accès direct :8099)
-    const shareBtn = document.getElementById("share-btn");
-    shareBtn.addEventListener("click", async () => {
-      const url = window.location.href;
+    const mainEl = document.getElementById("main");
+    const loaderEl = document.getElementById("page-loader");
+    const listEl = document.getElementById("participants-list");
+    const emptyEl = document.getElementById("participants-empty");
 
-      if (navigator.share) {
-        try {
-          await navigator.share({ title: "Un Denis Presque Parfait", url });
-        } catch {
-          // l'utilisateur a annulé le partage, on ne fait rien
-        }
-      } else {
-        // fallback : copie dans le presse-papier (desktop, ou navigateurs sans Web Share API)
-        try {
-          await navigator.clipboard.writeText(url);
-          shareBtn.textContent = "✅";
-          setTimeout(() => (shareBtn.textContent = "🔗"), 1500);
-        } catch {
-          alert(url); // dernier recours si le presse-papier est bloqué
-        }
+    let participantsLoaded = false;
+    let gameStatusKnown = false;
+    let redirecting = false;
+
+    function reveal() {
+      if (redirecting) return;
+      if (!participantsLoaded || !gameStatusKnown) return;
+      withMinDelay(loadStart, 300, () => {
+        loaderEl.style.display = "none";
+        mainEl.classList.add("is-ready");
+      });
+    }
+
+    function renderParticipants(list) {
+      listEl.innerHTML = "";
+      if (!list || list.length === 0) {
+        listEl.appendChild(emptyEl);
+        return;
       }
+      list.forEach((p) => {
+        const btn = document.createElement("button");
+        btn.className = "participant-btn";
+        btn.appendChild(createAvatarElement(p, "md"));
+
+        const nameSpan = document.createElement("span");
+        nameSpan.textContent = p.name;
+        btn.appendChild(nameSpan);
+
+        btn.addEventListener("click", () => {
+          setCookie("participant_id", p.id);
+          window.location.href = "game.html";
+        });
+        listEl.appendChild(btn);
+      });
+    }
+
+    const ws = connectWS({
+      onParticipants: (list) => {
+        participantsLoaded = true;
+        renderParticipants(list);
+        reveal();
+      },
+      onGameStatus: (complete) => {
+        gameStatusKnown = true;
+        if (complete) {
+          redirecting = true;
+          window.location.href = "results.html";
+        } else if (existingParticipant) {
+          redirecting = true;
+          window.location.replace("game.html");
+        } else {
+          reveal();
+        }
+      },
+      onGameComplete: () => {
+        redirecting = true;
+        window.location.href = "results.html";
+      },
+      onDbResetDone: () => {},
     });
+
+    ws.send(JSON.stringify({ type: "game:status" }));
   </script>
 </body>
 </html>
