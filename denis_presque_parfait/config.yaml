@@ -1,14 +1,10 @@
 name: "Un Denis Presque Parfait"
-version: "0.1.1"
+version: "0.1.2"
 slug: "denis_presque_parfait"
 description: "Jeu de notation familial - MVP live input"
 url: "https://github.com/toi/denis_presque_parfait"
 arch:
-  - armv7
-  - armhf
   - aarch64
-  - amd64
-  - i386
 init: false
 ingress: true
 ingress_port: 8080
