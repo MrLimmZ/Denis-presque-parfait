@@ -1,0 +1,44 @@
+// --- Images décoratives en haut/bas de la page d'accueil uniquement ---
+// Activées via la classe .has-home-decor sur <body> (ajoutée/retirée par pages.js
+// au montage/démontage du module "home"), pour ne jamais apparaître ailleurs.
+//
+// position: absolute (pas fixed) + body en position: relative : les images se calent
+// sur le haut/bas du DOCUMENT entier (la hauteur réelle de body), pas du viewport.
+// Résultat : si le contenu tient dans l'écran, ça coïncide visuellement avec le
+// haut/bas de l'écran ; si le contenu dépasse (scroll nécessaire), il faut scroller
+// jusqu'en bas pour voir l'image du bas — exactement le comportement demandé.
+
+body.has-home-decor {
+  position: relative;
+}
+
+body.has-home-decor::before,
+body.has-home-decor::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 264px;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  z-index: 0;
+  pointer-events: none;
+}
+
+body.has-home-decor::before {
+  top: 0;
+  //background-image: url("decor-top.png");
+}
+
+body.has-home-decor::after {
+  bottom: 0;
+  //background-image: url("decor-bottom.png");
+}
+
+@media (min-width: 700px) {
+  body.has-home-decor::before,
+  body.has-home-decor::after {
+    height: 324px;
+  }
+}

@@ -13,96 +13,41 @@
 
   <div id="app-logo"></div>
 
-  <main class="wrap" id="main">
-    <h1>Un Denis Presque Parfait</h1>
-
-    <div class="participants-section">
-      <span class="label">Qui es-tu ?</span>
-      <div class="participants-list" id="participants-list">
-        <p class="hint" id="participants-empty">Aucun participant pour le moment.</p>
+  <div data-barba="wrapper">
+    <main class="wrap wrap-center" data-barba="container" data-barba-namespace="home">
+      <div class="profile-select" id="profile-selection">
+        <span class="label profile-select-label">Qui es-tu ?</span>
+        <div class="participants-list" id="participants-list">
+          <p class="hint" id="participants-empty">Aucun participant pour le moment.</p>
+        </div>
       </div>
-    </div>
-  </main>
 
+      <div class="state-card setup-notice" id="setup-notice" style="display: none;">
+        <div class="state-card-icon state-card-icon-setup">
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 8v4l3 3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>
+          </svg>
+        </div>
+        <span class="state-card-eyebrow">Patiente un peu</span>
+        <h2 class="state-card-title">En cours de configuration</h2>
+        <p class="state-card-subtitle" id="setup-notice-text">La partie est en train d'être préparée.</p>
+        <a href="panel.html" class="btn btn-secondary setup-notice-btn">Ouvrir le panel admin</a>
+      </div>
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@barba/core@2.10.3/dist/barba.umd.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="client.js"></script>
   <script src="avatar.js"></script>
   <script src="logo.js"></script>
+  <script src="splash.js"></script>
   <script src="share.js"></script>
-  <script>
-    initShareButton({ title: "Un Denis Presque Parfait" });
-    initLogo();
-
-    const loadStart = Date.now();
-    const existingParticipant = getCookie("participant_id");
-
-    const mainEl = document.getElementById("main");
-    const loaderEl = document.getElementById("page-loader");
-    const listEl = document.getElementById("participants-list");
-    const emptyEl = document.getElementById("participants-empty");
-
-    let participantsLoaded = false;
-    let gameStatusKnown = false;
-    let redirecting = false;
-
-    function reveal() {
-      if (redirecting) return;
-      if (!participantsLoaded || !gameStatusKnown) return;
-      withMinDelay(loadStart, 300, () => {
-        loaderEl.style.display = "none";
-        mainEl.classList.add("is-ready");
-      });
-    }
-
-    function renderParticipants(list) {
-      listEl.innerHTML = "";
-      if (!list || list.length === 0) {
-        listEl.appendChild(emptyEl);
-        return;
-      }
-      list.forEach((p) => {
-        const btn = document.createElement("button");
-        btn.className = "participant-btn";
-        btn.appendChild(createAvatarElement(p, "md"));
-
-        const nameSpan = document.createElement("span");
-        nameSpan.textContent = p.name;
-        btn.appendChild(nameSpan);
-
-        btn.addEventListener("click", () => {
-          setCookie("participant_id", p.id);
-          window.location.href = "game.html";
-        });
-        listEl.appendChild(btn);
-      });
-    }
-
-    const ws = connectWS({
-      onParticipants: (list) => {
-        participantsLoaded = true;
-        renderParticipants(list);
-        reveal();
-      },
-      onGameStatus: (complete) => {
-        gameStatusKnown = true;
-        if (complete) {
-          redirecting = true;
-          window.location.href = "results.html";
-        } else if (existingParticipant) {
-          redirecting = true;
-          window.location.replace("game.html");
-        } else {
-          reveal();
-        }
-      },
-      onGameComplete: () => {
-        redirecting = true;
-        window.location.href = "results.html";
-      },
-      onDbResetDone: () => {},
-    });
-
-    ws.send(JSON.stringify({ type: "game:status" }));
-  </script>
+  <script src="calendar.js"></script>
+  <script src="rating.js"></script>
+  <script src="pages.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>

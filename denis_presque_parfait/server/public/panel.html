@@ -7,114 +7,321 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <div id="app-logo"></div>
+
   <main class="wrap is-ready">
-    <div class="header-row">
-      <h1>Panel admin</h1>
-      <button id="reset-db-btn" class="reset-db-btn" title="Réinitialiser toute la base">🗑️ Reset DB</button>
+    <h1>Panel admin</h1>
+
+    <div class="wizard-steps" id="wizard-steps" style="display: none;">
+      <span class="wizard-step-dot" data-step="1">1</span>
+      <span class="wizard-step-line"></span>
+      <span class="wizard-step-dot" data-step="2">2</span>
+      <span class="wizard-step-line"></span>
+      <span class="wizard-step-dot" data-step="3">3</span>
     </div>
 
-    <section class="participants-admin">
-      <span class="label">Participants</span>
+    <section class="wizard-panel" id="step-1" style="display: none;">
+      <span class="label">Ajoute les participants</span>
+      <p class="hint">Chaque participant pourra recevoir un jour et noter les autres.</p>
 
       <form id="participant-form" class="participant-form">
         <input id="participant-name-input" type="text" placeholder="Nom du participant" autocomplete="off" required />
-        <button type="submit" class="share-copy">Ajouter</button>
+        <button type="submit" class="btn btn-primary btn-sm">Ajouter</button>
       </form>
 
       <ul class="participant-admin-list" id="participant-admin-list"></ul>
     </section>
 
-    <section class="assignment-admin">
-      <span class="label">Assignation</span>
-      <p class="hint">Glisse un participant sur une journée pour l'assigner (une seule personne par jour, un seul jour par personne).</p>
+    <section class="wizard-panel" id="step-2" style="display: none;">
+      <span class="label">Planifie les jours</span>
+      <p class="hint">Glisse un participant sur une date, ou assigne-les au hasard.</p>
 
-      <div class="draggable-participants" id="draggable-participants"></div>
+      <div class="draggable-row">
+        <div class="draggable-participants" id="draggable-participants"></div>
+        <button id="random-assign-btn" class="btn btn-secondary btn-sm">Assigner au hasard</button>
+      </div>
 
-      <div class="calendar" id="assignment-calendar"></div>
+      <div class="calendar calendar-compact" id="assignment-calendar-step2"></div>
     </section>
 
-    <section class="criteria-admin">
+    <section class="wizard-panel" id="step-3" style="display: none;">
       <span class="label">Critères de notation</span>
-      <p class="hint">Définis les critères et la note maximale de chacun. L'ordre se verrouille dès qu'une note existe.</p>
+      <p class="hint">Note maximale et coefficient (1 par défaut) pour chaque critère.</p>
 
       <form id="criterion-form" class="criterion-form">
         <input id="criterion-label-input" type="text" placeholder="Nom du critère (ex: Le goût)" autocomplete="off" required />
-        <input id="criterion-max-input" type="number" min="2" max="20" value="5" required />
-        <button type="submit" class="share-copy">Ajouter</button>
+        <input id="criterion-max-input" type="number" min="2" max="20" value="5" title="Note max" required />
+        <input id="criterion-coef-input" type="number" min="0.5" max="10" step="0.5" value="1" title="Coefficient" required />
+        <button type="submit" class="btn btn-primary btn-sm">Ajouter</button>
       </form>
 
       <ul class="criterion-admin-list" id="criterion-admin-list"></ul>
     </section>
 
-    <section class="votes-admin">
-      <span class="label">Notes reçues</span>
+    <section id="dashboard" style="display: none;">
+      <div class="dashboard-header">
+        <span class="label">Suivi du jeu</span>
+        <div class="dashboard-header-actions">
+          <button id="edit-setup-btn" class="btn btn-secondary btn-sm" style="display: none;">Modifier</button>
+          <button id="reset-db-btn" class="btn btn-danger btn-sm">Réinitialiser la base</button>
+        </div>
+      </div>
 
-      <select id="votes-target-select" class="votes-target-select">
-        <option value="" disabled selected>Choisir un cuisinier</option>
-      </select>
-
-      <div id="votes-result"></div>
+      <div class="dashboard-grid">
+        <div class="dashboard-main">
+          <div class="votes-tabs" id="votes-tabs"></div>
+          <div id="votes-result"></div>
+        </div>
+        <div class="dashboard-side">
+          <span class="label">Calendrier</span>
+          <div class="calendar" id="assignment-calendar-dashboard"></div>
+        </div>
+      </div>
     </section>
   </main>
+
+  <div class="wizard-fixed-bar" id="wizard-fixed-bar" style="display: none;">
+    <button id="wizard-back-btn" class="btn btn-secondary">Retour</button>
+    <button id="wizard-next-btn" class="btn btn-primary" disabled>Suivant</button>
+  </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="client.js"></script>
   <script src="avatar.js"></script>
+  <script src="logo.js"></script>
   <script src="share.js"></script>
   <script src="calendar.js"></script>
   <script>
     initShareButton({ title: "Panel - Un Denis Presque Parfait" });
-
-    const votesSelectEl = document.getElementById("votes-target-select");
-    const votesResultEl = document.getElementById("votes-result");
+    initLogo();
 
     let currentParticipants = [];
+    let currentUnassignedIds = new Set();
     let currentCriteria = [];
     let currentVotes = [];
+    let setupStatus = { participantsCount: 0, unassignedCount: 0, criteriaCount: 0, hasStarted: false };
+    let view = null;
+    let resetInProgress = false;
+    let maxReachedStep = 1;
+    let hasCompletedWizardOnce = false;
+    let selectedVoteParticipantId = null;
+
+    const wizardStepsEl = document.getElementById("wizard-steps");
+    const step1El = document.getElementById("step-1");
+    const step2El = document.getElementById("step-2");
+    const step3El = document.getElementById("step-3");
+    const dashboardEl = document.getElementById("dashboard");
+    const editSetupBtn = document.getElementById("edit-setup-btn");
+
+    function decideInitialView() {
+      if (setupStatus.hasStarted) return "dashboard";
+      if (setupStatus.participantsCount === 0) return "step1";
+      if (setupStatus.unassignedCount > 0) return "step2";
+      if (setupStatus.criteriaCount === 0) return "step3";
+      return "dashboard";
+    }
+
+    function syncProgressFromStatus() {
+      if (setupStatus.hasStarted) {
+        hasCompletedWizardOnce = true;
+        return;
+      }
+      if (setupStatus.participantsCount === 0) {
+        maxReachedStep = 1;
+        hasCompletedWizardOnce = false;
+        return;
+      }
+      maxReachedStep = Math.max(maxReachedStep, 2);
+      if (setupStatus.unassignedCount === 0) {
+        maxReachedStep = Math.max(maxReachedStep, 3);
+      }
+      if (setupStatus.criteriaCount > 0 && setupStatus.unassignedCount === 0) {
+        hasCompletedWizardOnce = true;
+      }
+    }
+
+    function isStepClickable(stepNum) {
+      if (hasCompletedWizardOnce) return true;
+      return stepNum <= maxReachedStep;
+    }
+
+    function setView(newView) {
+      view = newView;
+      if (newView === "dashboard") hasCompletedWizardOnce = true;
+      renderView();
+    }
+
+    function renderView() {
+      if (view === null) return;
+
+      step1El.style.display = "none";
+      step2El.style.display = "none";
+      step3El.style.display = "none";
+      dashboardEl.style.display = "none";
+      wizardStepsEl.style.display = "none";
+
+      const stepNumberByView = { step1: 1, step2: 2, step3: 3 };
+
+      if (view === "dashboard") {
+        dashboardEl.style.display = "block";
+        editSetupBtn.style.display = setupStatus.hasStarted ? "none" : "inline-flex";
+        calendarDashboard.reloadCurrentMonth();
+      } else {
+        wizardStepsEl.style.display = "flex";
+        const currentStepNum = stepNumberByView[view];
+        wizardStepsEl.querySelectorAll(".wizard-step-dot").forEach((dot) => {
+          const step = Number(dot.dataset.step);
+          dot.classList.toggle("active", step === currentStepNum);
+          dot.classList.toggle("done", step < currentStepNum);
+          dot.classList.toggle("clickable", isStepClickable(step));
+        });
+
+        if (view === "step1") step1El.style.display = "block";
+        if (view === "step2") {
+          step2El.style.display = "block";
+          calendarStep2.reloadCurrentMonth();
+        }
+        if (view === "step3") step3El.style.display = "block";
+      }
+
+      const cfg = stepConfig[view];
+      if (cfg) {
+        wizardFixedBarEl.style.display = "flex";
+        wizardBackBtn.style.visibility = cfg.back ? "visible" : "hidden";
+        wizardNextBtn.textContent = cfg.nextLabel;
+      } else {
+        wizardFixedBarEl.style.display = "none";
+      }
+      document.querySelector("main.wrap").classList.toggle("has-wizard-bar", !!cfg);
+
+      updateNavButtonsState();
+    }
+
+    function updateNavButtonsState() {
+      const disabledByStep = {
+        step1: setupStatus.participantsCount === 0,
+        step2: setupStatus.participantsCount === 0 || setupStatus.unassignedCount > 0,
+        step3: setupStatus.criteriaCount === 0,
+      };
+      wizardNextBtn.disabled = !!disabledByStep[view];
+    }
+
+    wizardStepsEl.querySelectorAll(".wizard-step-dot").forEach((dot) => {
+      dot.addEventListener("click", () => {
+        const step = Number(dot.dataset.step);
+        if (!isStepClickable(step)) return;
+        setView(`step${step}`);
+      });
+    });
+
+    // --- Barre de navigation fixe du wizard (retour / suivant / terminer) ---
+    const wizardFixedBarEl = document.getElementById("wizard-fixed-bar");
+    const wizardBackBtn = document.getElementById("wizard-back-btn");
+    const wizardNextBtn = document.getElementById("wizard-next-btn");
+
+    const stepConfig = {
+      step1: { back: null, next: "step2", nextLabel: "Suivant" },
+      step2: { back: "step1", next: "step3", nextLabel: "Suivant" },
+      step3: { back: "step2", next: "dashboard", nextLabel: "Terminer" },
+    };
+
+    wizardBackBtn.addEventListener("click", () => {
+      const cfg = stepConfig[view];
+      if (cfg && cfg.back) setView(cfg.back);
+    });
+
+    wizardNextBtn.addEventListener("click", () => {
+      const cfg = stepConfig[view];
+      if (!cfg) return;
+      if (cfg.next === "step2") maxReachedStep = Math.max(maxReachedStep, 2);
+      if (cfg.next === "step3") maxReachedStep = Math.max(maxReachedStep, 3);
+      setView(cfg.next);
+    });
+
+    editSetupBtn.addEventListener("click", () => setView("step1"));
+
+    document.getElementById("random-assign-btn").addEventListener("click", () => {
+      ws.send(JSON.stringify({ type: "assignments:random" }));
+    });
 
     const ws = connectWS({
       onParticipants: (list) => {
         currentParticipants = list || [];
         renderParticipants(currentParticipants);
-        renderDraggableParticipants(currentParticipants);
-        renderVotesTargetOptions(currentParticipants);
+        renderVotesTabs(currentParticipants);
       },
-      onAssignmentsList: (month, list) => calendar.setAssignments(month, list),
-      onAssignmentUpdate: (date, participantId, participantName, hasVotes, avatarIcon, avatarColor) =>
-        calendar.applyUpdate(date, participantId, participantName, hasVotes, avatarIcon, avatarColor),
+      onUnassignedParticipants: (list) => {
+        currentUnassignedIds = new Set((list || []).map((p) => p.id));
+        renderDraggableParticipants(currentParticipants);
+      },
+      onAssignmentsList: (month, list) => {
+        calendarStep2.setAssignments(month, list);
+        calendarDashboard.setAssignments(month, list);
+      },
+      onAssignmentUpdate: (date, participantId, participantName, hasVotes, avatarIcon, avatarColor, avatarImage) => {
+        calendarStep2.applyUpdate(date, participantId, participantName, hasVotes, avatarIcon, avatarColor, avatarImage);
+        calendarDashboard.applyUpdate(date, participantId, participantName, hasVotes, avatarIcon, avatarColor, avatarImage);
+      },
       onAssignmentError: (message) => alert(message),
+      onAssignmentsRandomDone: () => {
+        calendarStep2.reloadCurrentMonth();
+        calendarDashboard.reloadCurrentMonth();
+      },
       onAssignmentForParticipant: (participantId, date) => renderVotesForParticipantAfterDateLookup(participantId, date),
       onCriteria: (list) => {
         currentCriteria = list || [];
         renderCriteria(currentCriteria);
       },
       onCriteriaError: (message) => alert(message),
+      onParticipantsError: (message) => alert(message),
       onVotesList: (list) => {
         currentVotes = list || [];
-        const selectedId = votesSelectEl.value;
-        if (selectedId) renderVotesForParticipant(Number(selectedId));
+        if (selectedVoteParticipantId) renderVotesForParticipant(selectedVoteParticipantId);
+      },
+      onSetupStatus: (status) => {
+        setupStatus = status;
+        syncProgressFromStatus();
+
+        if (resetInProgress) {
+          view = decideInitialView();
+          resetInProgress = false;
+        } else if (status.hasStarted && view !== "dashboard") {
+          view = "dashboard";
+        } else if (view === null) {
+          view = decideInitialView();
+        }
+
+        renderView();
+      },
+      onServerError: (message) => {
+        alert("Une erreur est survenue côté serveur : " + message);
       },
       onDbResetDone: () => {
-        votesResultEl.innerHTML = "";
-        votesSelectEl.value = "";
-        ws.send(JSON.stringify({ type: "assignments:list", month: calendar.getCurrentMonthKey() }));
+        selectedVoteParticipantId = null;
+        const resultEl = document.getElementById("votes-result");
+        if (resultEl) resultEl.innerHTML = "";
+        maxReachedStep = 1;
+        hasCompletedWizardOnce = false;
         alert("Base de données réinitialisée.");
       },
     });
 
     ws.send(JSON.stringify({ type: "votes:list" }));
+    ws.send(JSON.stringify({ type: "setup:status" }));
 
-    // --- Reset DB ---
     document.getElementById("reset-db-btn").addEventListener("click", () => {
       const confirmation = prompt(
         "Cette action supprime DÉFINITIVEMENT tous les participants, assignations, critères et notes.\n\nTape RESET pour confirmer :"
       );
-      if (confirmation === "RESET") {
-        ws.send(JSON.stringify({ type: "db:reset" }));
+      if (confirmation === null) return;
+      if (confirmation.trim().toUpperCase() !== "RESET") {
+        alert("Texte de confirmation incorrect, réinitialisation annulée.");
+        return;
       }
+      resetInProgress = true;
+      ws.send(JSON.stringify({ type: "db:reset" }));
     });
 
-    // --- Participants ---
     const formEl = document.getElementById("participant-form");
     const nameInputEl = document.getElementById("participant-name-input");
     const listEl = document.getElementById("participant-admin-list");
@@ -136,7 +343,28 @@
         const topRow = document.createElement("div");
         topRow.className = "participant-admin-top-row";
 
-        topRow.appendChild(createAvatarElement(p, "sm"));
+        const avatarWrap = document.createElement("div");
+        avatarWrap.className = "avatar-hover-wrap";
+        avatarWrap.appendChild(createAvatarElement(p, "sm"));
+
+        const pickerContainer = document.createElement("div");
+        avatarWrap.appendChild(pickerContainer);
+        createAvatarPicker({
+          container: pickerContainer,
+          color: p.avatar_color,
+          image: p.avatar_image,
+          onChange: (result) => {
+            if (result.mode === "color") {
+              ws.send(JSON.stringify({ type: "participants:avatar:color", id: p.id, color: result.color }));
+            } else if (result.mode === "image") {
+              ws.send(JSON.stringify({ type: "participants:avatar:image", id: p.id, image: result.image }));
+            } else if (result.mode === "remove") {
+              ws.send(JSON.stringify({ type: "participants:avatar:image", id: p.id, image: null }));
+            }
+          },
+        });
+
+        topRow.appendChild(avatarWrap);
 
         const nameInput = document.createElement("input");
         nameInput.type = "text";
@@ -150,31 +378,8 @@
         });
         topRow.appendChild(nameInput);
 
-        const avatarToggle = document.createElement("details");
-        avatarToggle.className = "avatar-toggle";
-        const summary = document.createElement("summary");
-        summary.textContent = "🎨";
-        summary.title = "Changer l'avatar";
-        avatarToggle.appendChild(summary);
-
-        const pickerContainer = document.createElement("div");
-        avatarToggle.appendChild(pickerContainer);
-        avatarToggle.addEventListener("toggle", () => {
-          if (avatarToggle.open) {
-            createAvatarPicker({
-              container: pickerContainer,
-              icon: p.avatar_icon,
-              color: p.avatar_color,
-              onChange: ({ icon, color }) => {
-                ws.send(JSON.stringify({ type: "participants:avatar", id: p.id, icon, color }));
-              },
-            });
-          }
-        });
-        topRow.appendChild(avatarToggle);
-
         const deleteBtn = document.createElement("button");
-        deleteBtn.className = "participant-admin-delete";
+        deleteBtn.className = "btn btn-danger btn-sm";
         deleteBtn.textContent = "Supprimer";
         deleteBtn.addEventListener("click", () => {
           if (confirm(`Supprimer ${p.name} ?`)) {
@@ -183,77 +388,89 @@
         });
         topRow.appendChild(deleteBtn);
 
-        if (p.locked) {
-          const lockBadge = document.createElement("span");
-          lockBadge.className = "locked-badge";
-          lockBadge.textContent = "🔒";
-          lockBadge.title = "Déjà noté";
-          topRow.appendChild(lockBadge);
-        }
-
         li.appendChild(topRow);
         listEl.appendChild(li);
       });
     }
 
-    // --- Pastilles à glisser + calendrier assignation ---
     const draggableEl = document.getElementById("draggable-participants");
 
     function renderDraggableParticipants(list) {
       draggableEl.innerHTML = "";
-      (list || []).forEach((p) => {
+      const unassignedOnly = (list || []).filter((p) => currentUnassignedIds.has(p.id));
+
+      if (unassignedOnly.length === 0) {
+        const emptyMsg = document.createElement("span");
+        emptyMsg.className = "draggable-empty";
+        emptyMsg.textContent = "Tout le monde est planifié.";
+        draggableEl.appendChild(emptyMsg);
+        return;
+      }
+
+      unassignedOnly.forEach((p) => {
         const pill = document.createElement("div");
         pill.className = "draggable-pill";
+        pill.style.background = p.avatar_color || "var(--accent)";
 
         pill.appendChild(createAvatarElement(p, "xs"));
         const nameSpan = document.createElement("span");
         nameSpan.textContent = p.name;
         pill.appendChild(nameSpan);
 
-        if (p.locked) {
-          pill.classList.add("draggable-pill-locked");
-          pill.title = "Déjà noté, non déplaçable";
-          pill.draggable = false;
-        } else {
-          pill.draggable = true;
-          pill.addEventListener("dragstart", (e) => {
-            e.dataTransfer.setData("text/participant-id", p.id);
-          });
-        }
+        pill.draggable = true;
+        pill.addEventListener("dragstart", (e) => {
+          e.dataTransfer.setData("text/participant-id", p.id);
+        });
 
         draggableEl.appendChild(pill);
       });
     }
 
-    const calendar = createCalendar({
-      container: document.getElementById("assignment-calendar"),
-      editable: true,
-      onAssign: (date, participantId) => {
-        ws.send(JSON.stringify({ type: "assignments:set", date, participant_id: participantId }));
-      },
-      onUnassign: (date) => {
-        ws.send(JSON.stringify({ type: "assignments:delete", date }));
-      },
-      onMonthChange: (month) => {
-        ws.send(JSON.stringify({ type: "assignments:list", month }));
-      },
-    });
-    calendar.init();
+    function makeAdminCalendar(containerId, editable) {
+      const el = document.getElementById(containerId);
+      const calendar = createCalendar({
+        container: el,
+        editable,
+        onAssign: editable
+          ? (date, participantId) => {
+              ws.send(JSON.stringify({ type: "assignments:set", date, participant_id: participantId }));
+            }
+          : undefined,
+        onUnassign: editable
+          ? (date) => {
+              ws.send(JSON.stringify({ type: "assignments:delete", date }));
+            }
+          : undefined,
+        onMonthChange: (month) => {
+          ws.send(JSON.stringify({ type: "assignments:list", month }));
+        },
+      });
+      calendar.init();
+      calendar.reloadCurrentMonth = () => {
+        ws.send(JSON.stringify({ type: "assignments:list", month: calendar.getCurrentMonthKey() }));
+      };
+      return calendar;
+    }
 
-    // --- Critères de notation ---
+    const calendarStep2 = makeAdminCalendar("assignment-calendar-step2", true);
+    const calendarDashboard = makeAdminCalendar("assignment-calendar-dashboard", false);
+
     const criterionFormEl = document.getElementById("criterion-form");
     const criterionLabelInput = document.getElementById("criterion-label-input");
     const criterionMaxInput = document.getElementById("criterion-max-input");
+    const criterionCoefInput = document.getElementById("criterion-coef-input");
     const criterionListEl = document.getElementById("criterion-admin-list");
 
     criterionFormEl.addEventListener("submit", (e) => {
       e.preventDefault();
       const label = criterionLabelInput.value.trim();
       const maxNote = Number(criterionMaxInput.value);
+      const coefficient = Number(criterionCoefInput.value) || 1;
       if (!label || !maxNote) return;
-      ws.send(JSON.stringify({ type: "criteria:add", label, max_note: maxNote }));
+      ws.send(JSON.stringify({ type: "criteria:add", label, max_note: maxNote, coefficient }));
       criterionLabelInput.value = "";
       criterionMaxInput.value = 5;
+      criterionCoefInput.value = 1;
     });
 
     function renderCriteria(list) {
@@ -270,7 +487,9 @@
         labelInput.addEventListener("change", () => {
           const newLabel = labelInput.value.trim();
           if (newLabel) {
-            ws.send(JSON.stringify({ type: "criteria:update", id: c.id, label: newLabel, max_note: c.max_note }));
+            ws.send(
+              JSON.stringify({ type: "criteria:update", id: c.id, label: newLabel, max_note: c.max_note, coefficient: c.coefficient })
+            );
           }
         });
 
@@ -280,36 +499,51 @@
         maxInput.max = 20;
         maxInput.value = c.max_note;
         maxInput.className = "criterion-admin-max";
+        maxInput.title = "Note max";
         maxInput.addEventListener("change", () => {
           const newMax = Number(maxInput.value);
           if (newMax) {
-            ws.send(JSON.stringify({ type: "criteria:update", id: c.id, label: c.label, max_note: newMax }));
+            ws.send(
+              JSON.stringify({ type: "criteria:update", id: c.id, label: c.label, max_note: newMax, coefficient: c.coefficient })
+            );
           }
         });
 
+        const coefInput = document.createElement("input");
+        coefInput.type = "number";
+        coefInput.min = 0.5;
+        coefInput.max = 10;
+        coefInput.step = 0.5;
+        coefInput.value = c.coefficient;
+        coefInput.className = "criterion-admin-coef";
+        coefInput.title = "Coefficient";
+        coefInput.addEventListener("change", () => {
+          const newCoef = Number(coefInput.value) || 1;
+          ws.send(
+            JSON.stringify({ type: "criteria:update", id: c.id, label: c.label, max_note: c.max_note, coefficient: newCoef })
+          );
+        });
+
         const upBtn = document.createElement("button");
-        upBtn.className = "criterion-admin-move";
+        upBtn.className = "btn btn-secondary btn-sm";
         upBtn.textContent = "↑";
         upBtn.disabled = index === 0 || c.has_votes;
-        upBtn.title = c.has_votes ? "Verrouillé (déjà noté)" : "";
         upBtn.addEventListener("click", () => {
           ws.send(JSON.stringify({ type: "criteria:move", id: c.id, direction: "up" }));
         });
 
         const downBtn = document.createElement("button");
-        downBtn.className = "criterion-admin-move";
+        downBtn.className = "btn btn-secondary btn-sm";
         downBtn.textContent = "↓";
         downBtn.disabled = index === list.length - 1 || c.has_votes;
-        downBtn.title = c.has_votes ? "Verrouillé (déjà noté)" : "";
         downBtn.addEventListener("click", () => {
           ws.send(JSON.stringify({ type: "criteria:move", id: c.id, direction: "down" }));
         });
 
         const deleteBtn = document.createElement("button");
-        deleteBtn.className = "participant-admin-delete";
+        deleteBtn.className = "btn btn-danger btn-sm";
         deleteBtn.textContent = "Supprimer";
         deleteBtn.disabled = c.has_votes;
-        deleteBtn.title = c.has_votes ? "Verrouillé (déjà noté)" : "";
         deleteBtn.addEventListener("click", () => {
           if (confirm(`Supprimer le critère "${c.label}" ?`)) {
             ws.send(JSON.stringify({ type: "criteria:delete", id: c.id }));
@@ -320,40 +554,51 @@
         li.appendChild(downBtn);
         li.appendChild(labelInput);
         li.appendChild(maxInput);
+        li.appendChild(coefInput);
         li.appendChild(deleteBtn);
         criterionListEl.appendChild(li);
       });
+
+      updateNavButtonsState();
     }
 
-    // --- Notes reçues : sélecteur de cuisinier + tableau fusionné ---
+    const votesTabsEl = document.getElementById("votes-tabs");
+    const votesResultEl = document.getElementById("votes-result");
 
-    function renderVotesTargetOptions(participants) {
-      const previousValue = votesSelectEl.value;
-      votesSelectEl.innerHTML = `<option value="" disabled ${!previousValue ? "selected" : ""}>Choisir un cuisinier</option>`;
-      (participants || []).forEach((p) => {
-        const opt = document.createElement("option");
-        opt.value = p.id;
-        opt.textContent = p.name;
-        votesSelectEl.appendChild(opt);
+    function renderVotesTabs(participants) {
+      votesTabsEl.innerHTML = "";
+      const list = participants || [];
+
+      if (selectedVoteParticipantId === null && list.length > 0) {
+        selectedVoteParticipantId = list[0].id;
+      }
+
+      list.forEach((p) => {
+        const tab = document.createElement("button");
+        tab.type = "button";
+        tab.className = "votes-tab";
+        if (p.id === selectedVoteParticipantId) tab.classList.add("active");
+        tab.textContent = p.name;
+        tab.addEventListener("click", () => {
+          selectedVoteParticipantId = p.id;
+          renderVotesTabs(currentParticipants);
+          renderVotesForParticipant(p.id);
+        });
+        votesTabsEl.appendChild(tab);
       });
-      if (previousValue) votesSelectEl.value = previousValue;
-    }
 
-    votesSelectEl.addEventListener("change", () => {
-      const id = Number(votesSelectEl.value);
-      if (!id) return;
-      renderVotesForParticipant(id);
-    });
+      if (selectedVoteParticipantId !== null) {
+        renderVotesForParticipant(selectedVoteParticipantId);
+      }
+    }
 
     function renderVotesForParticipant(participantId) {
       const rows = currentVotes.filter((v) => v.target_participant_id === participantId);
-
       if (rows.length === 0) {
         ws.send(JSON.stringify({ type: "assignments:get_for_participant", participant_id: participantId }));
         votesResultEl.innerHTML = `<p class="hint">Chargement...</p>`;
         return;
       }
-
       renderVotesTable(rows);
     }
 
@@ -375,7 +620,7 @@
         : [...new Map(rows.map((r) => [r.criterion_id, { id: r.criterion_id, label: r.criterion_label, max_note: r.max_note }])).values()];
 
       let html = `<table class="votes-table"><thead><tr><th>Votant</th>`;
-      criteriaInRows.forEach((c) => (html += `<th>${c.label}</th>`));
+      criteriaInRows.forEach((c) => (html += `<th>${c.label}${c.coefficient && c.coefficient !== 1 ? ` ×${c.coefficient}` : ""}</th>`));
       html += `</tr></thead><tbody>`;
 
       voters.forEach(([voterId, voterName]) => {

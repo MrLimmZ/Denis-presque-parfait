@@ -7,10 +7,10 @@
   display: flex;
   justify-content: center;
   color: var(--text);
-  pointer-events: none;
+  cursor: pointer;
 
   svg {
-    width: 100px;
+    width: clamp(70px, 18vw, 100px);
     height: auto;
   }
 }

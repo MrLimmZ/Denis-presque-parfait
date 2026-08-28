@@ -21,9 +21,6 @@ function initShareButton({ title = "Un Denis Presque Parfait" } = {}) {
       </div>
 
       <div class="share-body">
-        <span class="share-eyebrow">Partager</span>
-        <h2 class="share-title">${title}</h2>
-
         <div class="share-url-row">
           <span class="share-url" id="share-url-text"></span>
           <button class="share-copy" id="share-copy-btn">Copier</button>

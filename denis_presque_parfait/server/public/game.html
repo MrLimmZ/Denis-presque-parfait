@@ -13,277 +13,34 @@
 
   <div id="app-logo"></div>
 
-  <button id="back-btn" class="fab fab-left" title="Changer de participant">←</button>
+  <div data-barba="wrapper">
+    <main class="wrap wrap-center" data-barba="container" data-barba-namespace="game">
+            <button id="back-btn" class="fab fab-left" title="Changer de participant">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M19 12H5M5 12L12 19M5 12L12 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
 
-  <main class="wrap" id="main">
-    <h1>Un Denis Presque Parfait</h1>
+      <div id="game-content"></div>
 
-    <div id="game-content"></div>
+      <section class="assignment-view" id="assignment-view" style="display: none;">
+        <span class="label">Calendrier des jours attribués</span>
+        <div class="calendar" id="assignment-calendar"></div>
+      </section>
+    </main>
+  </div>
 
-    <section class="assignment-view" id="assignment-view" style="display: none;">
-      <span class="label">Calendrier des jours attribués</span>
-      <div class="calendar" id="assignment-calendar"></div>
-    </section>
-  </main>
-
+  <script src="https://cdn.jsdelivr.net/npm/@barba/core@2.10.3/dist/barba.umd.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="client.js"></script>
   <script src="avatar.js"></script>
   <script src="logo.js"></script>
+  <script src="splash.js"></script>
   <script src="share.js"></script>
   <script src="calendar.js"></script>
   <script src="rating.js"></script>
-  <script>
-    initShareButton({ title: "Un Denis Presque Parfait" });
-    initLogo();
-
-    const myParticipantId = getCookie("participant_id");
-    if (!myParticipantId) {
-      window.location.replace("index.html");
-    }
-
-    document.getElementById("back-btn").addEventListener("click", () => {
-      deleteCookie("participant_id");
-      window.location.href = "index.html";
-    });
-
-    const loadStart = Date.now();
-    const today = todayDateString();
-    const mainEl = document.getElementById("main");
-    const loaderEl = document.getElementById("page-loader");
-    const contentEl = document.getElementById("game-content");
-    const assignmentViewEl = document.getElementById("assignment-view");
-
-    let allParticipants = [];
-    let criteriaList = [];
-    let todaysAssignment = null;
-    let criteriaLoaded = false;
-    let assignmentLoaded = false;
-    let alreadyVoted = null;
-    let votersForToday = new Set();
-    let hasRevealed = false;
-    let redirecting = false;
-    let gameStatusKnown = false;
-
-    function reveal() {
-      if (redirecting || hasRevealed) return;
-      if (!gameStatusKnown) return;
-      hasRevealed = true;
-      withMinDelay(loadStart, 300, () => {
-        loaderEl.style.display = "none";
-        mainEl.classList.add("is-ready");
-      });
-    }
-
-    function goToResults() {
-      if (redirecting) return;
-      redirecting = true;
-      window.location.href = "results.html";
-    }
-
-    function showCalendar() {
-      assignmentViewEl.style.display = "block";
-    }
-    function hideCalendar() {
-      assignmentViewEl.style.display = "none";
-    }
-
-    function renderVotersChecklist() {
-      if (!todaysAssignment || allParticipants.length === 0) return "";
-
-      const expectedVoters = allParticipants.filter(
-        (p) => String(p.id) !== String(todaysAssignment.participant_id)
-      );
-
-      const items = expectedVoters
-        .map((p) => {
-          const voted = votersForToday.has(p.id);
-          return `
-            <div class="voters-checklist-item ${voted ? "voted" : "pending"}">
-              ${renderAvatarHTML(p, "xs")}
-              <span>${p.name}</span>
-              <span class="voters-checklist-icon">${voted ? "✓" : ""}</span>
-            </div>
-          `;
-        })
-        .join("");
-
-      return `
-        <div class="voters-checklist">
-          <span class="label">Qui a voté</span>
-          <div class="voters-checklist-list">${items}</div>
-        </div>
-      `;
-    }
-
-    function renderThankYou() {
-      contentEl.innerHTML = `
-        <div class="value-card">
-          <span class="value">Merci pour ta notation ! 🙏</span>
-        </div>
-        ${renderVotersChecklist()}
-      `;
-      showCalendar();
-      reveal();
-    }
-
-    function updateVotersChecklistIfVisible() {
-      if (alreadyVoted) renderThankYou();
-    }
-
-    function renderContent() {
-      if (!assignmentLoaded || !criteriaLoaded) return;
-
-      if (!todaysAssignment) {
-        contentEl.innerHTML = `<p class="hint">Pas de repas prévu aujourd'hui.</p>`;
-        showCalendar();
-        reveal();
-        return;
-      }
-
-      const isMyDay = String(todaysAssignment.participant_id) === String(myParticipantId);
-
-      if (isMyDay) {
-        contentEl.innerHTML = `
-          <div class="value-card">
-            ${renderAvatarHTML(todaysAssignment, "lg")}
-            <span class="value">C'est à toi de jouer ! Bon courage 🍽️</span>
-          </div>
-        `;
-        showCalendar();
-        reveal();
-        return;
-      }
-
-      if (alreadyVoted === null) return;
-
-      if (alreadyVoted) {
-        renderThankYou();
-        return;
-      }
-
-      hideCalendar();
-      contentEl.innerHTML = "";
-
-      const ratingContainer = document.createElement("div");
-      ratingContainer.className = "rating-flow";
-      contentEl.appendChild(ratingContainer);
-
-      createRatingFlow({
-        container: ratingContainer,
-        criteria: criteriaList,
-        onComplete: (scores) => {
-          ws.send(
-            JSON.stringify({
-              type: "votes:submit",
-              date: today,
-              voter_participant_id: Number(myParticipantId),
-              target_participant_id: todaysAssignment.participant_id,
-              scores,
-            })
-          );
-        },
-      });
-
-      reveal();
-    }
-
-    const ws = connectWS({
-      onParticipants: (list) => {
-        allParticipants = list || [];
-        updateVotersChecklistIfVisible();
-      },
-      onCriteria: (list) => {
-        criteriaList = list || [];
-        criteriaLoaded = true;
-        renderContent();
-      },
-      onAssignmentGet: (date, assignment) => {
-        if (date !== today) return;
-        todaysAssignment = assignment;
-        assignmentLoaded = true;
-
-        if (assignment && String(assignment.participant_id) !== String(myParticipantId)) {
-          ws.send(
-            JSON.stringify({
-              type: "votes:has_voted_today",
-              date: today,
-              voter_participant_id: Number(myParticipantId),
-            })
-          );
-          ws.send(
-            JSON.stringify({
-              type: "votes:voters_for_date",
-              date: today,
-              target_participant_id: assignment.participant_id,
-            })
-          );
-        }
-
-        renderContent();
-      },
-      onHasVotedToday: (hasVoted) => {
-        alreadyVoted = hasVoted;
-        renderContent();
-      },
-      onVotesSubmitted: () => {
-        alreadyVoted = true;
-        renderThankYou();
-      },
-      onVotersForDate: (date, targetId, voterIds) => {
-        if (date !== today || !todaysAssignment || targetId !== todaysAssignment.participant_id) return;
-        votersForToday = new Set(voterIds || []);
-        updateVotersChecklistIfVisible();
-      },
-      onVoterUpdate: (date, targetId, voterId) => {
-        if (date !== today || !todaysAssignment || targetId !== todaysAssignment.participant_id) return;
-        votersForToday.add(voterId);
-        updateVotersChecklistIfVisible();
-      },
-      onAssignmentsList: (month, list) => calendar.setAssignments(month, list),
-      onAssignmentUpdate: (date, participantId, participantName, hasVotes, avatarIcon, avatarColor) => {
-        calendar.applyUpdate(date, participantId, participantName, hasVotes, avatarIcon, avatarColor);
-        if (date === today) {
-          todaysAssignment = participantId
-            ? {
-                date,
-                participant_id: participantId,
-                participant_name: participantName,
-                has_votes: hasVotes,
-                avatar_icon: avatarIcon,
-                avatar_color: avatarColor,
-              }
-            : null;
-        }
-      },
-      onGameStatus: (complete) => {
-        gameStatusKnown = true;
-        if (complete) {
-          goToResults();
-        } else {
-          reveal();
-          renderContent();
-        }
-      },
-      onGameComplete: () => goToResults(),
-      onDbResetDone: () => {
-        deleteCookie("participant_id");
-        window.location.href = "index.html";
-      },
-    });
-
-    ws.send(JSON.stringify({ type: "game:status" }));
-    ws.send(JSON.stringify({ type: "assignments:get", date: today }));
-
-    const calendar = createCalendar({
-      container: document.getElementById("assignment-calendar"),
-      editable: false,
-      today,
-      onMonthChange: (month) => {
-        ws.send(JSON.stringify({ type: "assignments:list", month }));
-      },
-    });
-    calendar.init();
-  </script>
+  <script src="pages.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>

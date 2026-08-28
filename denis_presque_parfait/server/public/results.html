@@ -13,195 +13,39 @@
 
   <div id="app-logo"></div>
 
-  <main class="wrap is-ready" id="main">
-    <div id="intro-screen" class="results-intro" style="display: none;">
-      <span class="results-intro-eyebrow">C'est terminé</span>
-      <h1 class="results-intro-title">Les résultats sont disponibles</h1>
-      <p class="results-intro-description">
-        Tout le monde a voté ! Découvre qui remporte cette édition d'Un Denis Presque Parfait.
-      </p>
-      <button id="show-results-btn" class="rating-nav-btn results-intro-cta">Voir les résultats</button>
-    </div>
+  <div data-barba="wrapper">
+    <main class="wrap wrap-center is-ready" id="main">
+      <div id="intro-screen" class="results-intro" style="display: none;">
+        <span class="results-intro-eyebrow">C'est terminé</span>
+        <h1 class="results-intro-title">Les résultats sont disponibles</h1>
+        <p class="results-intro-description">
+          Tout le monde a voté ! Découvre qui remporte cette édition d'Un Denis Presque Parfait.
+        </p>
+        <button id="show-results-btn" class="rating-nav-btn results-intro-cta">Voir les résultats</button>
+      </div>
 
-    <div id="countdown-overlay" class="countdown-overlay" style="display: none;">
-      <span class="countdown-number" id="countdown-number">3</span>
-    </div>
+      <div id="countdown-overlay" class="countdown-overlay" style="display: none;">
+        <span class="countdown-number" id="countdown-number">3</span>
+      </div>
 
-    <div id="results-content" style="display: none;">
-      <div class="podium" id="podium"></div>
+      <div id="results-content" style="display: none;">
+        <div class="podium" id="podium"></div>
+        <div class="ranking-list" id="ranking-list"></div>
+      </div>
+    </main>
+  </div>
 
-      <div class="ranking-list" id="ranking-list"></div>
-    </div>
-  </main>
-
+  <script src="https://cdn.jsdelivr.net/npm/@barba/core@2.10.3/dist/barba.umd.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="client.js"></script>
   <script src="avatar.js"></script>
   <script src="logo.js"></script>
+  <script src="splash.js"></script>
   <script src="share.js"></script>
-  <script>
-    initShareButton({ title: "Le classement - Un Denis Presque Parfait" });
-    initLogo();
-
-    const loadStart = Date.now();
-    const loaderEl = document.getElementById("page-loader");
-    const introScreenEl = document.getElementById("intro-screen");
-    const showResultsBtn = document.getElementById("show-results-btn");
-    const countdownOverlay = document.getElementById("countdown-overlay");
-    const countdownNumberEl = document.getElementById("countdown-number");
-    const resultsContentEl = document.getElementById("results-content");
-    const podiumEl = document.getElementById("podium");
-    const rankingListEl = document.getElementById("ranking-list");
-
-    let hasStartedCountdown = false;
-    let openDetailEl = null; // référence au seul détail actuellement ouvert (accordéon exclusif)
-
-    function runCountdown(onDone) {
-      if (hasStartedCountdown) return;
-      hasStartedCountdown = true;
-
-      const steps = ["3", "2", "1"];
-      let i = 0;
-
-      function next() {
-        if (i >= steps.length) {
-          countdownOverlay.style.display = "none";
-          onDone();
-          return;
-        }
-        countdownNumberEl.textContent = steps[i];
-        countdownNumberEl.classList.remove("countdown-pulse");
-        void countdownNumberEl.offsetWidth;
-        countdownNumberEl.classList.add("countdown-pulse");
-        i += 1;
-        setTimeout(next, 800);
-      }
-
-      next();
-    }
-
-    function medalFor(index) {
-      return ["🥇", "🥈", "🥉"][index] || "";
-    }
-
-    function renderPodium(results) {
-      const top3 = results.slice(0, 3);
-      const order = [1, 0, 2].filter((i) => top3[i]);
-
-      podiumEl.innerHTML = "";
-      order.forEach((i) => {
-        const r = top3[i];
-        const block = document.createElement("div");
-        block.className = `podium-block podium-rank-${i + 1}`;
-        block.innerHTML = `
-          <span class="podium-medal">${medalFor(i)}</span>
-          ${renderAvatarHTML(r, "lg")}
-          <span class="podium-name">${r.participant_name}</span>
-          <span class="podium-score">${r.overall_average_out_of_10}/10</span>
-        `;
-        podiumEl.appendChild(block);
-      });
-    }
-
-    function renderRankingList(results) {
-      rankingListEl.innerHTML = "";
-      openDetailEl = null;
-
-      results.forEach((r, index) => {
-        const item = document.createElement("div");
-        item.className = "ranking-item";
-
-        const row = document.createElement("button");
-        row.className = "ranking-row";
-        row.innerHTML = `
-          <span class="ranking-position">${index + 1}</span>
-          ${renderAvatarHTML(r, "sm")}
-          <span class="ranking-name">${r.participant_name}</span>
-          <span class="ranking-score">${r.overall_average_out_of_10}/10</span>
-        `;
-
-        const detail = document.createElement("div");
-        detail.className = "ranking-detail";
-        detail.innerHTML = buildDetailTable(r);
-        detail.style.display = "none";
-
-        row.addEventListener("click", () => {
-          const isCurrentlyOpen = detail.style.display !== "none";
-
-          // Ferme le détail précédemment ouvert, s'il y en a un et que ce n'est pas celui-ci
-          if (openDetailEl && openDetailEl !== detail) {
-            openDetailEl.style.display = "none";
-          }
-
-          detail.style.display = isCurrentlyOpen ? "none" : "block";
-          openDetailEl = isCurrentlyOpen ? null : detail;
-        });
-
-        item.appendChild(row);
-        item.appendChild(detail);
-        rankingListEl.appendChild(item);
-      });
-    }
-
-    function buildDetailTable(result) {
-      const voterNames = [
-        ...new Set(result.criteria.flatMap((c) => c.votes.map((v) => v.voter_name))),
-      ];
-
-      let html = `<table class="votes-table"><thead><tr><th>Critère</th>`;
-      voterNames.forEach((name) => (html += `<th>${name}</th>`));
-      html += `<th>Moyenne</th></tr></thead><tbody>`;
-
-      result.criteria.forEach((c) => {
-        html += `<tr><td>${c.label}</td>`;
-        voterNames.forEach((name) => {
-          const vote = c.votes.find((v) => v.voter_name === name);
-          html += `<td>${vote ? `${vote.score}/${c.max_note}` : "—"}</td>`;
-        });
-        html += `<td><strong>${c.average}/${c.max_note}</strong></td></tr>`;
-      });
-
-      html += `</tbody></table>`;
-      return html;
-    }
-
-    function showResults(results) {
-      renderPodium(results);
-      renderRankingList(results);
-
-      withMinDelay(loadStart, 300, () => {
-        loaderEl.style.display = "none";
-        introScreenEl.style.display = "flex";
-      });
-
-      showResultsBtn.addEventListener(
-        "click",
-        () => {
-          introScreenEl.style.display = "none";
-          countdownOverlay.style.display = "flex";
-          runCountdown(() => {
-            resultsContentEl.style.display = "block";
-          });
-        },
-        { once: true }
-      );
-    }
-
-    const ws = connectWS({
-      onGameStatus: (complete, results) => {
-        if (complete && results) {
-          showResults(results);
-        } else {
-          window.location.href = "index.html";
-        }
-      },
-      onDbResetDone: () => {
-        deleteCookie("participant_id");
-        window.location.href = "index.html";
-      },
-    });
-
-    ws.send(JSON.stringify({ type: "game:status" }));
-  </script>
+  <script src="calendar.js"></script>
+  <script src="rating.js"></script>
+  <script src="pages.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>

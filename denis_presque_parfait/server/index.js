@@ -7,7 +7,9 @@ const db = require("./db");
 const PORT = process.env.PORT || 8080;
 
 const app = express();
-app.use(express.json());
+// Les avatars-photo passent en base64 dans les messages WS : on relève un peu la
+// limite par défaut d'express (inutilisée ici pour le WS, mais gardée cohérente).
+app.use(express.json({ limit: "5mb" }));
 
 if (process.env.NODE_ENV !== "production") {
   const livereload = require("livereload");
@@ -22,7 +24,8 @@ if (process.env.NODE_ENV !== "production") {
 app.use(express.static(path.join(__dirname, "public")));
 
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server, path: "/ws" });
+// Autorise des frames WS un peu plus grandes que le défaut, pour les images d'avatar en base64.
+const wss = new WebSocketServer({ server, path: "/ws", maxPayload: 5 * 1024 * 1024 });
 
 function broadcast(data) {
   const payload = JSON.stringify(data);
@@ -33,6 +36,7 @@ function broadcast(data) {
 
 function broadcastParticipants() {
   broadcast({ type: "participants", list: db.listParticipants() });
+  broadcast({ type: "participants:unassigned", list: db.listUnassignedParticipants() });
 }
 
 function broadcastCriteria() {
@@ -43,6 +47,10 @@ function broadcastVotes() {
   broadcast({ type: "votes:list", list: db.listVotes() });
 }
 
+function broadcastSetupStatus() {
+  broadcast({ type: "setup:status", status: db.getSetupStatus() });
+}
+
 function checkAndBroadcastGameStatus() {
   const status = db.computeGameStatus();
   if (status.complete) {
@@ -50,9 +58,25 @@ function checkAndBroadcastGameStatus() {
   }
 }
 
+function broadcastAssignmentUpdateFor(date, participantId, hasVotes) {
+  const participant = participantId ? db.getParticipant(participantId) : null;
+  broadcast({
+    type: "assignments:update",
+    date,
+    participant_id: participantId || null,
+    participant_name: participant ? participant.name : null,
+    avatar_icon: participant ? participant.avatar_icon : null,
+    avatar_color: participant ? participant.avatar_color : null,
+    avatar_image: participant ? participant.avatar_image : null,
+    has_votes: !!hasVotes,
+  });
+}
+
 wss.on("connection", (ws) => {
   ws.send(JSON.stringify({ type: "participants", list: db.listParticipants() }));
+  ws.send(JSON.stringify({ type: "participants:unassigned", list: db.listUnassignedParticipants() }));
   ws.send(JSON.stringify({ type: "criteria", list: db.listCriteria() }));
+  ws.send(JSON.stringify({ type: "setup:status", status: db.getSetupStatus() }));
 
   ws.on("message", (raw) => {
     let msg;
@@ -62,206 +86,237 @@ wss.on("connection", (ws) => {
       return;
     }
 
-    // --- Participants ---
-    if (msg.type === "participants:add" && typeof msg.name === "string" && msg.name.trim()) {
-      db.addParticipant(msg.name.trim());
-      broadcastParticipants();
-    }
-
-    if (msg.type === "participants:rename" && msg.id && typeof msg.name === "string" && msg.name.trim()) {
-      db.renameParticipant(msg.id, msg.name.trim());
-      broadcastParticipants();
-    }
-
-    if (
-      msg.type === "participants:avatar" &&
-      msg.id &&
-      typeof msg.icon === "string" &&
-      typeof msg.color === "string"
-    ) {
-      db.setParticipantAvatar(msg.id, msg.icon, msg.color);
-      broadcastParticipants();
-    }
-
-    if (msg.type === "participants:delete" && msg.id) {
-      db.deleteParticipant(msg.id);
-      broadcastParticipants();
-      checkAndBroadcastGameStatus();
-    }
-
-    // --- Assignations ---
-    if (msg.type === "assignments:list" && typeof msg.month === "string") {
-      ws.send(
-        JSON.stringify({
-          type: "assignments:list",
-          month: msg.month,
-          list: db.listAssignmentsForMonth(msg.month),
-        })
-      );
-    }
-
-    if (msg.type === "assignments:get" && typeof msg.date === "string") {
-      const assignment = db.getAssignmentForDate(msg.date);
-      ws.send(JSON.stringify({ type: "assignments:get", date: msg.date, assignment: assignment || null }));
-    }
-
-    if (msg.type === "assignments:get_for_participant" && msg.participant_id) {
-      const assignment = db.getAssignmentForParticipant(msg.participant_id);
-      ws.send(
-        JSON.stringify({
-          type: "assignments:get_for_participant",
-          participant_id: msg.participant_id,
-          date: assignment ? assignment.date : null,
-        })
-      );
-    }
-
-    if (msg.type === "assignments:set" && typeof msg.date === "string" && msg.participant_id) {
-      const result = db.setAssignment(msg.date, msg.participant_id);
-      if (!result.ok) {
-        ws.send(JSON.stringify({ type: "assignments:error", message: result.error }));
-      } else {
-        const participant = db.getParticipant(msg.participant_id);
-        broadcast({
-          type: "assignments:update",
-          date: msg.date,
-          participant_id: msg.participant_id,
-          participant_name: participant ? participant.name : null,
-          avatar_icon: participant ? participant.avatar_icon : null,
-          avatar_color: participant ? participant.avatar_color : null,
-          has_votes: false,
-        });
-        broadcastParticipants();
-        checkAndBroadcastGameStatus();
-      }
-    }
-
-    if (msg.type === "assignments:delete" && typeof msg.date === "string") {
-      const result = db.deleteAssignment(msg.date);
-      if (!result.ok) {
-        ws.send(JSON.stringify({ type: "assignments:error", message: result.error }));
-      } else {
-        broadcast({
-          type: "assignments:update",
-          date: msg.date,
-          participant_id: null,
-          participant_name: null,
-          avatar_icon: null,
-          avatar_color: null,
-          has_votes: false,
-        });
-      }
-    }
-
-    // --- Critères de notation ---
-    if (msg.type === "criteria:add" && typeof msg.label === "string" && msg.label.trim() && msg.max_note) {
-      db.addCriterion(msg.label.trim(), Number(msg.max_note));
-      broadcastCriteria();
-    }
-
-    if (msg.type === "criteria:update" && msg.id && typeof msg.label === "string" && msg.label.trim() && msg.max_note) {
-      db.updateCriterion(msg.id, msg.label.trim(), Number(msg.max_note));
-      broadcastCriteria();
-    }
-
-    if (msg.type === "criteria:delete" && msg.id) {
-      const result = db.deleteCriterion(msg.id);
-      if (!result.ok) {
-        ws.send(JSON.stringify({ type: "criteria:error", message: result.error }));
-      } else {
-        broadcastCriteria();
-      }
-    }
-
-    if (msg.type === "criteria:move" && msg.id && (msg.direction === "up" || msg.direction === "down")) {
-      const result = db.moveCriterion(msg.id, msg.direction);
-      if (!result.ok) {
-        ws.send(JSON.stringify({ type: "criteria:error", message: result.error }));
-      } else {
-        broadcastCriteria();
-      }
-    }
-
-    // --- Votes ---
-    if (
-      msg.type === "votes:submit" &&
-      typeof msg.date === "string" &&
-      msg.voter_participant_id &&
-      msg.target_participant_id &&
-      Array.isArray(msg.scores)
-    ) {
-      db.submitVotes(msg.date, msg.voter_participant_id, msg.target_participant_id, msg.scores);
-      ws.send(JSON.stringify({ type: "votes:submitted" }));
-      broadcastVotes();
-      broadcastParticipants();
-
-      const participant = db.getParticipant(msg.target_participant_id);
-      broadcast({
-        type: "assignments:update",
-        date: msg.date,
-        participant_id: msg.target_participant_id,
-        participant_name: participant ? participant.name : null,
-        avatar_icon: participant ? participant.avatar_icon : null,
-        avatar_color: participant ? participant.avatar_color : null,
-        has_votes: true,
-      });
-
-      broadcast({
-        type: "votes:voter_update",
-        date: msg.date,
-        target_participant_id: msg.target_participant_id,
-        voter_participant_id: msg.voter_participant_id,
-      });
-
-      checkAndBroadcastGameStatus();
-    }
-
-    if (msg.type === "votes:list") {
-      ws.send(JSON.stringify({ type: "votes:list", list: db.listVotes() }));
-    }
-
-    if (msg.type === "votes:has_voted_today" && typeof msg.date === "string" && msg.voter_participant_id) {
-      ws.send(
-        JSON.stringify({
-          type: "votes:has_voted_today",
-          hasVoted: db.hasVotedToday(msg.date, msg.voter_participant_id),
-        })
-      );
-    }
-
-    if (msg.type === "votes:voters_for_date" && typeof msg.date === "string" && msg.target_participant_id) {
-      ws.send(
-        JSON.stringify({
-          type: "votes:voters_for_date",
-          date: msg.date,
-          target_participant_id: msg.target_participant_id,
-          voter_ids: db.listVotersForDateTarget(msg.date, msg.target_participant_id),
-        })
-      );
-    }
-
-    // --- Statut / résultats de la partie ---
-    if (msg.type === "game:status") {
-      const status = db.computeGameStatus();
-      ws.send(
-        JSON.stringify({
-          type: "game:status",
-          complete: status.complete,
-          results: status.complete ? db.getResults() : null,
-        })
-      );
-    }
-
-    // --- Reset total de la base ---
-    if (msg.type === "db:reset") {
-      db.resetDatabase();
-      broadcastParticipants();
-      broadcastCriteria();
-      broadcastVotes();
-      broadcast({ type: "db:reset:done" });
+    try {
+      handleMessage(ws, msg);
+    } catch (err) {
+      console.error("[SERVER] Erreur lors du traitement du message WS:", msg.type, err);
+      ws.send(JSON.stringify({ type: "server:error", message: err.message || "Erreur serveur" }));
     }
   });
 });
+
+function handleMessage(ws, msg) {
+  // --- Participants ---
+  if (msg.type === "participants:add" && typeof msg.name === "string" && msg.name.trim()) {
+    const result = db.addParticipant(msg.name.trim());
+    if (!result.ok) {
+      ws.send(JSON.stringify({ type: "participants:error", message: result.error }));
+    } else {
+      broadcastParticipants();
+      broadcastSetupStatus();
+    }
+  }
+
+  if (msg.type === "participants:rename" && msg.id && typeof msg.name === "string" && msg.name.trim()) {
+    const result = db.renameParticipant(msg.id, msg.name.trim());
+    if (!result.ok) {
+      ws.send(JSON.stringify({ type: "participants:error", message: result.error }));
+    } else {
+      broadcastParticipants();
+    }
+  }
+
+  if (msg.type === "participants:avatar:color" && msg.id && typeof msg.color === "string") {
+    db.setParticipantAvatarColor(msg.id, msg.color);
+    broadcastParticipants();
+  }
+
+  if (
+    msg.type === "participants:avatar:image" &&
+    msg.id &&
+    (msg.image === null || typeof msg.image === "string")
+  ) {
+    db.setParticipantAvatarImage(msg.id, msg.image);
+    broadcastParticipants();
+  }
+
+  if (msg.type === "participants:delete" && msg.id) {
+    db.deleteParticipant(msg.id);
+    broadcastParticipants();
+    broadcastSetupStatus();
+    checkAndBroadcastGameStatus();
+  }
+
+  // --- Assignations ---
+  if (msg.type === "assignments:list" && typeof msg.month === "string") {
+    ws.send(
+      JSON.stringify({
+        type: "assignments:list",
+        month: msg.month,
+        list: db.listAssignmentsForMonth(msg.month),
+      })
+    );
+  }
+
+  if (msg.type === "assignments:get" && typeof msg.date === "string") {
+    const assignment = db.getAssignmentForDate(msg.date);
+    ws.send(JSON.stringify({ type: "assignments:get", date: msg.date, assignment: assignment || null }));
+  }
+
+  if (msg.type === "assignments:get_for_participant" && msg.participant_id) {
+    const assignment = db.getAssignmentForParticipant(msg.participant_id);
+    ws.send(
+      JSON.stringify({
+        type: "assignments:get_for_participant",
+        participant_id: msg.participant_id,
+        date: assignment ? assignment.date : null,
+      })
+    );
+  }
+
+  if (msg.type === "assignments:set" && typeof msg.date === "string" && msg.participant_id) {
+    const result = db.setAssignment(msg.date, msg.participant_id);
+    if (!result.ok) {
+      ws.send(JSON.stringify({ type: "assignments:error", message: result.error }));
+    } else {
+      broadcastAssignmentUpdateFor(msg.date, msg.participant_id, false);
+      broadcastParticipants();
+      broadcastSetupStatus();
+      checkAndBroadcastGameStatus();
+    }
+  }
+
+  if (msg.type === "assignments:delete" && typeof msg.date === "string") {
+    const result = db.deleteAssignment(msg.date);
+    if (!result.ok) {
+      ws.send(JSON.stringify({ type: "assignments:error", message: result.error }));
+    } else {
+      broadcastAssignmentUpdateFor(msg.date, null, false);
+      broadcastParticipants();
+      broadcastSetupStatus();
+    }
+  }
+
+  if (msg.type === "assignments:random") {
+    db.autoAssignUnassigned();
+    broadcastParticipants();
+    broadcastSetupStatus();
+    broadcast({ type: "assignments:random:done" });
+  }
+
+  // --- Critères de notation ---
+  if (msg.type === "criteria:add" && typeof msg.label === "string" && msg.label.trim() && msg.max_note) {
+    db.addCriterion(msg.label.trim(), Number(msg.max_note), Number(msg.coefficient) || 1);
+    broadcastCriteria();
+    broadcastSetupStatus();
+  }
+
+  if (
+    msg.type === "criteria:update" &&
+    msg.id &&
+    typeof msg.label === "string" &&
+    msg.label.trim() &&
+    msg.max_note
+  ) {
+    db.updateCriterion(msg.id, msg.label.trim(), Number(msg.max_note), Number(msg.coefficient) || 1);
+    broadcastCriteria();
+  }
+
+  if (msg.type === "criteria:delete" && msg.id) {
+    const result = db.deleteCriterion(msg.id);
+    if (!result.ok) {
+      ws.send(JSON.stringify({ type: "criteria:error", message: result.error }));
+    } else {
+      broadcastCriteria();
+      broadcastSetupStatus();
+    }
+  }
+
+  if (msg.type === "criteria:move" && msg.id && (msg.direction === "up" || msg.direction === "down")) {
+    const result = db.moveCriterion(msg.id, msg.direction);
+    if (!result.ok) {
+      ws.send(JSON.stringify({ type: "criteria:error", message: result.error }));
+    } else {
+      broadcastCriteria();
+    }
+  }
+
+  // --- Votes ---
+  if (
+    msg.type === "votes:submit" &&
+    typeof msg.date === "string" &&
+    msg.voter_participant_id &&
+    msg.target_participant_id &&
+    Array.isArray(msg.scores)
+  ) {
+    db.submitVotes(msg.date, msg.voter_participant_id, msg.target_participant_id, msg.scores);
+    ws.send(JSON.stringify({ type: "votes:submitted" }));
+    broadcastVotes();
+    broadcastParticipants();
+    broadcastSetupStatus();
+
+    broadcastAssignmentUpdateFor(msg.date, msg.target_participant_id, true);
+
+    broadcast({
+      type: "votes:voter_update",
+      date: msg.date,
+      target_participant_id: msg.target_participant_id,
+      voter_participant_id: msg.voter_participant_id,
+    });
+
+    checkAndBroadcastGameStatus();
+  }
+
+  if (msg.type === "votes:list") {
+    ws.send(JSON.stringify({ type: "votes:list", list: db.listVotes() }));
+  }
+
+  if (msg.type === "votes:has_voted_today" && typeof msg.date === "string" && msg.voter_participant_id) {
+    ws.send(
+      JSON.stringify({
+        type: "votes:has_voted_today",
+        hasVoted: db.hasVotedToday(msg.date, msg.voter_participant_id),
+      })
+    );
+  }
+
+  if (msg.type === "votes:voters_for_date" && typeof msg.date === "string" && msg.target_participant_id) {
+    ws.send(
+      JSON.stringify({
+        type: "votes:voters_for_date",
+        date: msg.date,
+        target_participant_id: msg.target_participant_id,
+        voter_ids: db.listVotersForDateTarget(msg.date, msg.target_participant_id),
+      })
+    );
+  }
+
+  // --- Requêtes explicites de données ---
+  if (msg.type === "participants:list") {
+    ws.send(JSON.stringify({ type: "participants", list: db.listParticipants() }));
+  }
+
+  if (msg.type === "criteria:list") {
+    ws.send(JSON.stringify({ type: "criteria", list: db.listCriteria() }));
+  }
+
+  // --- Statut de configuration (wizard admin) ---
+  if (msg.type === "setup:status") {
+    ws.send(JSON.stringify({ type: "setup:status", status: db.getSetupStatus() }));
+  }
+
+  // --- Statut / résultats de la partie ---
+  if (msg.type === "game:status") {
+    const status = db.computeGameStatus();
+    ws.send(
+      JSON.stringify({
+        type: "game:status",
+        complete: status.complete,
+        results: status.complete ? db.getResults() : null,
+      })
+    );
+  }
+
+  // --- Reset total de la base ---
+  if (msg.type === "db:reset") {
+    db.resetDatabase();
+    broadcastParticipants();
+    broadcastCriteria();
+    broadcastVotes();
+    broadcastSetupStatus();
+    broadcast({ type: "db:reset:done" });
+  }
+}
 
 server.listen(PORT, () => {
   console.log(`Denis Presque Parfait - serveur lancé sur le port ${PORT}`);

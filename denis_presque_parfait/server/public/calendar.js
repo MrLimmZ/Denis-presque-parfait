@@ -2,7 +2,7 @@ function createCalendar({ container, editable = false, today = null, onAssign, o
   const todayStr = today || (typeof todayDateString === "function" ? todayDateString() : null);
   const now = new Date();
   let currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  let assignmentsByDate = {}; // "YYYY-MM-DD" -> { participant_id, participant_name, has_votes, avatar_icon, avatar_color }
+  let assignmentsByDate = {};
 
   const WEEKDAYS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
 
@@ -20,6 +20,9 @@ function createCalendar({ container, editable = false, today = null, onAssign, o
     const header = document.createElement("div");
     header.className = "calendar-header";
 
+    const navGroup = document.createElement("div");
+    navGroup.className = "calendar-nav-group";
+
     const prevBtn = document.createElement("button");
     prevBtn.className = "calendar-nav";
     prevBtn.textContent = "←";
@@ -36,9 +39,17 @@ function createCalendar({ container, editable = false, today = null, onAssign, o
     nextBtn.setAttribute("aria-label", "Mois suivant");
     nextBtn.addEventListener("click", () => changeMonth(1));
 
-    header.appendChild(prevBtn);
-    header.appendChild(label);
-    header.appendChild(nextBtn);
+    navGroup.appendChild(prevBtn);
+    navGroup.appendChild(label);
+    navGroup.appendChild(nextBtn);
+
+    const todayBtn = document.createElement("button");
+    todayBtn.className = "calendar-today-btn";
+    todayBtn.textContent = "Aujourd'hui";
+    todayBtn.addEventListener("click", () => goToCurrentMonth());
+
+    header.appendChild(navGroup);
+    header.appendChild(todayBtn);
     container.appendChild(header);
 
     const weekdaysRow = document.createElement("div");
@@ -85,8 +96,14 @@ function createCalendar({ container, editable = false, today = null, onAssign, o
       if (assignment) {
         const chip = document.createElement("div");
         chip.className = "calendar-chip";
-        if (isPast && isLocked) chip.classList.add("calendar-chip-done");
-        else if (isPast && !isLocked) chip.classList.add("calendar-chip-missed");
+
+        if (isPast && isLocked) {
+          chip.classList.add("calendar-chip-done");
+        } else if (isPast && !isLocked) {
+          chip.classList.add("calendar-chip-missed");
+        } else {
+          chip.style.background = assignment.avatar_color || "var(--accent)";
+        }
 
         chip.appendChild(createAvatarElement(assignment, "xs"));
 
@@ -96,6 +113,13 @@ function createCalendar({ container, editable = false, today = null, onAssign, o
         chip.appendChild(nameSpan);
 
         if (editable && !isLocked) {
+          chip.draggable = true;
+          chip.classList.add("calendar-chip-draggable");
+          chip.addEventListener("dragstart", (e) => {
+            e.dataTransfer.setData("text/participant-id", assignment.participant_id);
+            e.stopPropagation();
+          });
+
           const removeBtn = document.createElement("button");
           removeBtn.className = "calendar-chip-remove";
           removeBtn.textContent = "×";
@@ -145,6 +169,14 @@ function createCalendar({ container, editable = false, today = null, onAssign, o
     onMonthChange && onMonthChange(monthKey(currentMonth));
   }
 
+  function goToCurrentMonth() {
+    const n = new Date();
+    currentMonth = new Date(n.getFullYear(), n.getMonth(), 1);
+    assignmentsByDate = {};
+    render();
+    onMonthChange && onMonthChange(monthKey(currentMonth));
+  }
+
   return {
     init() {
       render();
@@ -163,11 +195,12 @@ function createCalendar({ container, editable = false, today = null, onAssign, o
           has_votes: !!a.has_votes,
           avatar_icon: a.avatar_icon,
           avatar_color: a.avatar_color,
+          avatar_image: a.avatar_image,
         };
       });
       render();
     },
-    applyUpdate(date, participantId, participantName, hasVotes, avatarIcon, avatarColor) {
+    applyUpdate(date, participantId, participantName, hasVotes, avatarIcon, avatarColor, avatarImage) {
       if (!date.startsWith(monthKey(currentMonth))) return;
       if (participantId) {
         assignmentsByDate[date] = {
@@ -176,6 +209,7 @@ function createCalendar({ container, editable = false, today = null, onAssign, o
           has_votes: !!hasVotes,
           avatar_icon: avatarIcon,
           avatar_color: avatarColor,
+          avatar_image: avatarImage,
         };
       } else {
         delete assignmentsByDate[date];

@@ -1,0 +1,94 @@
+.state-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 36px 28px 28px;
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 4px;
+}
+
+.state-card-icon {
+  margin-bottom: 14px;
+
+  .avatar {
+    box-shadow: 0 0 0 4px var(--bg), 0 0 0 5px var(--border);
+  }
+}
+
+.state-card-icon-check {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  svg {
+    width: 26px;
+    height: 26px;
+  }
+}
+
+.state-card-eyebrow {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.state-card-title {
+  margin: 3px 0 0;
+  font-size: 1.3rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.state-card-subtitle {
+  margin: 6px 0 0;
+  font-size: 0.86rem;
+  color: var(--muted);
+  max-width: 280px;
+  line-height: 1.45;
+}
+
+// La checklist "qui a voté", désormais intégrée à l'intérieur de la state-card
+.state-card .voters-checklist {
+  margin-top: 24px;
+  width: 100%;
+  text-align: left;
+}
+
+// --- Écran "en cours de configuration" (visiteur, index.html) ---
+
+.state-card-icon-setup {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  svg {
+    width: 26px;
+    height: 26px;
+  }
+}
+
+.setup-notice-btn {
+  margin-top: 20px;
+  text-decoration: none;
+}
+
+#game-content {
+  width: 100%;
+}

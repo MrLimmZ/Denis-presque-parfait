@@ -40,14 +40,21 @@ db.exec(`
   );
 `);
 
-// --- Migration légère : ajoute les colonnes avatar si elles n'existent pas encore
-// (utile pour les bases créées avant l'introduction de cette fonctionnalité) ---
+// --- Migrations légères (colonnes ajoutées après coup, rétrocompatibles) ---
 const participantColumns = db.prepare("PRAGMA table_info(participants)").all().map((c) => c.name);
 if (!participantColumns.includes("avatar_icon")) {
   db.exec(`ALTER TABLE participants ADD COLUMN avatar_icon TEXT NOT NULL DEFAULT '👤'`);
 }
 if (!participantColumns.includes("avatar_color")) {
-  db.exec(`ALTER TABLE participants ADD COLUMN avatar_color TEXT NOT NULL DEFAULT '#e8a33d'`);
+  db.exec(`ALTER TABLE participants ADD COLUMN avatar_color TEXT NOT NULL DEFAULT '#02413B'`);
+}
+if (!participantColumns.includes("avatar_image")) {
+  db.exec(`ALTER TABLE participants ADD COLUMN avatar_image TEXT DEFAULT NULL`);
+}
+
+const criteriaColumns = db.prepare("PRAGMA table_info(criteria)").all().map((c) => c.name);
+if (!criteriaColumns.includes("coefficient")) {
+  db.exec(`ALTER TABLE criteria ADD COLUMN coefficient REAL NOT NULL DEFAULT 1`);
 }
 
 function pad2(n) {
@@ -63,12 +70,40 @@ function hasVotesForDate(date) {
   return db.prepare("SELECT COUNT(*) AS n FROM votes WHERE date = ?").get(date).n > 0;
 }
 
+function totalVotesCount() {
+  return db.prepare("SELECT COUNT(*) AS n FROM votes").get().n;
+}
+
+// --- Avatars ---
+
+// 4 familles de teintes (vert/sarcelle, bleu, violet, rose), 4 variantes claires/foncées
+// chacune. Doit rester identique à AVATAR_COLORS dans public/avatar.js
+const AVATAR_COLOR_PALETTE = [
+  "#012C27", "#02413B", "#0B5C52", "#157A6C",
+  "#123A5C", "#1B6E96", "#2A9CD1", "#4FB2DE",
+  "#3B1D57", "#623291", "#7C4AB0", "#8C5CC0",
+  "#7A0041", "#A5005C", "#DE0076", "#F03D93",
+];
+
+function pickNextAvatarColor() {
+  const used = db.prepare("SELECT avatar_color FROM participants").all().map((r) => r.avatar_color);
+  const usedSet = new Set(used);
+  const firstUnused = AVATAR_COLOR_PALETTE.find((c) => !usedSet.has(c));
+  if (firstUnused) return firstUnused;
+  // Palette épuisée : on cycle en reprenant la couleur la moins récemment utilisée
+  return AVATAR_COLOR_PALETTE[used.length % AVATAR_COLOR_PALETTE.length];
+}
+
 // --- Participants ---
+
+function findParticipantByName(name) {
+  return db.prepare("SELECT id FROM participants WHERE LOWER(name) = LOWER(?)").get(name.trim());
+}
 
 function listParticipants() {
   return db
     .prepare(
-      `SELECT p.id, p.name, p.avatar_icon, p.avatar_color,
+      `SELECT p.id, p.name, p.avatar_icon, p.avatar_color, p.avatar_image,
         EXISTS(
           SELECT 1 FROM assignments a
           WHERE a.participant_id = p.id
@@ -82,25 +117,57 @@ function listParticipants() {
 
 function getParticipant(id) {
   return db
-    .prepare("SELECT id, name, avatar_icon, avatar_color FROM participants WHERE id = ?")
+    .prepare("SELECT id, name, avatar_icon, avatar_color, avatar_image FROM participants WHERE id = ?")
     .get(id);
 }
 
 function addParticipant(name) {
-  const result = db.prepare("INSERT INTO participants (name) VALUES (?)").run(name);
-  return getParticipant(result.lastInsertRowid);
+  const trimmed = name.trim();
+  const existing = findParticipantByName(trimmed);
+  if (existing) {
+    return { ok: false, error: `Un participant nommé "${trimmed}" existe déjà.` };
+  }
+
+  const color = pickNextAvatarColor();
+  const result = db
+    .prepare("INSERT INTO participants (name, avatar_color) VALUES (?, ?)")
+    .run(trimmed, color);
+
+  return { ok: true, participant: getParticipant(result.lastInsertRowid) };
 }
 
 function renameParticipant(id, name) {
-  db.prepare("UPDATE participants SET name = ? WHERE id = ?").run(name, id);
+  const trimmed = name.trim();
+  const existing = findParticipantByName(trimmed);
+  if (existing && existing.id !== id) {
+    return { ok: false, error: `Un participant nommé "${trimmed}" existe déjà.` };
+  }
+  db.prepare("UPDATE participants SET name = ? WHERE id = ?").run(trimmed, id);
+  return { ok: true };
 }
 
-function setParticipantAvatar(id, icon, color) {
-  db.prepare("UPDATE participants SET avatar_icon = ?, avatar_color = ? WHERE id = ?").run(icon, color, id);
+// Choisir une couleur retire automatiquement la photo (les deux modes sont exclusifs).
+function setParticipantAvatarColor(id, color) {
+  db.prepare("UPDATE participants SET avatar_color = ?, avatar_image = NULL WHERE id = ?").run(color, id);
+}
+
+// image = data URL base64 (déjà recadrée/compressée côté client), ou null pour la retirer.
+function setParticipantAvatarImage(id, image) {
+  db.prepare("UPDATE participants SET avatar_image = ? WHERE id = ?").run(image, id);
 }
 
 function deleteParticipant(id) {
   db.prepare("DELETE FROM participants WHERE id = ?").run(id);
+}
+
+function listUnassignedParticipants() {
+  return db
+    .prepare(
+      `SELECT p.id, p.name FROM participants p
+       WHERE NOT EXISTS (SELECT 1 FROM assignments a WHERE a.participant_id = p.id)
+       ORDER BY p.id ASC`
+    )
+    .all();
 }
 
 // --- Assignations (calendrier) ---
@@ -109,7 +176,7 @@ function listAssignmentsForMonth(month) {
   return db
     .prepare(
       `SELECT a.date, a.participant_id, p.name AS participant_name,
-              p.avatar_icon, p.avatar_color,
+              p.avatar_icon, p.avatar_color, p.avatar_image,
         EXISTS(SELECT 1 FROM votes v WHERE v.date = a.date AND v.target_participant_id = a.participant_id) AS has_votes
        FROM assignments a
        JOIN participants p ON p.id = a.participant_id
@@ -123,7 +190,7 @@ function getAssignmentForDate(date) {
   return db
     .prepare(
       `SELECT a.date, a.participant_id, p.name AS participant_name,
-              p.avatar_icon, p.avatar_color,
+              p.avatar_icon, p.avatar_color, p.avatar_image,
         EXISTS(SELECT 1 FROM votes v WHERE v.date = a.date AND v.target_participant_id = a.participant_id) AS has_votes
        FROM assignments a
        JOIN participants p ON p.id = a.participant_id
@@ -170,12 +237,51 @@ function deleteAssignment(date) {
   return { ok: true };
 }
 
+// Assigne aléatoirement les participants sans date à des jours futurs disponibles.
+function autoAssignUnassigned(daysAhead = 120) {
+  const unassigned = listUnassignedParticipants();
+  if (unassigned.length === 0) return { assigned: [] };
+
+  const takenDates = new Set(db.prepare("SELECT date FROM assignments").all().map((r) => r.date));
+  const start = new Date();
+  const candidateDates = [];
+
+  for (let i = 0; candidateDates.length < unassigned.length && i < daysAhead; i++) {
+    const d = new Date(start);
+    d.setDate(d.getDate() + i);
+    const ds = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+    if (!takenDates.has(ds)) candidateDates.push(ds);
+  }
+
+  function shuffle(arr) {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  const shuffledParticipants = shuffle(unassigned);
+  const shuffledDates = shuffle(candidateDates);
+  const assigned = [];
+
+  shuffledParticipants.forEach((p, idx) => {
+    const date = shuffledDates[idx];
+    if (!date) return;
+    const result = setAssignment(date, p.id);
+    if (result.ok) assigned.push({ participant_id: p.id, date });
+  });
+
+  return { assigned };
+}
+
 // --- Critères de notation ---
 
 function listCriteria() {
   return db
     .prepare(
-      `SELECT c.id, c.label, c.max_note, c.position,
+      `SELECT c.id, c.label, c.max_note, c.position, c.coefficient,
         EXISTS(SELECT 1 FROM votes v WHERE v.criterion_id = c.id) AS has_votes
        FROM criteria c
        ORDER BY c.position ASC, c.id ASC`
@@ -187,16 +293,21 @@ function criterionHasVotes(id) {
   return db.prepare("SELECT COUNT(*) AS n FROM votes WHERE criterion_id = ?").get(id).n > 0;
 }
 
-function addCriterion(label, maxNote) {
+function addCriterion(label, maxNote, coefficient = 1) {
   const maxPos = db.prepare("SELECT COALESCE(MAX(position), -1) AS m FROM criteria").get().m;
   const result = db
-    .prepare("INSERT INTO criteria (label, max_note, position) VALUES (?, ?, ?)")
-    .run(label, maxNote, maxPos + 1);
-  return { id: result.lastInsertRowid, label, max_note: maxNote, position: maxPos + 1 };
+    .prepare("INSERT INTO criteria (label, max_note, position, coefficient) VALUES (?, ?, ?, ?)")
+    .run(label, maxNote, maxPos + 1, coefficient);
+  return { id: result.lastInsertRowid, label, max_note: maxNote, position: maxPos + 1, coefficient };
 }
 
-function updateCriterion(id, label, maxNote) {
-  db.prepare("UPDATE criteria SET label = ?, max_note = ? WHERE id = ?").run(label, maxNote, id);
+function updateCriterion(id, label, maxNote, coefficient = 1) {
+  db.prepare("UPDATE criteria SET label = ?, max_note = ?, coefficient = ? WHERE id = ?").run(
+    label,
+    maxNote,
+    coefficient,
+    id
+  );
 }
 
 function deleteCriterion(id) {
@@ -277,7 +388,7 @@ function listVotes() {
       `SELECT v.id, v.date, v.score,
               v.voter_participant_id, vp.name AS voter_name,
               v.target_participant_id, tp.name AS target_name,
-              v.criterion_id, c.label AS criterion_label, c.max_note
+              v.criterion_id, c.label AS criterion_label, c.max_note, c.coefficient
        FROM votes v
        JOIN participants vp ON vp.id = v.voter_participant_id
        JOIN participants tp ON tp.id = v.target_participant_id
@@ -287,7 +398,18 @@ function listVotes() {
     .all();
 }
 
-// --- Statut de la partie ---
+// --- Statut de configuration (wizard admin) ---
+
+function getSetupStatus() {
+  const participantsCount = db.prepare("SELECT COUNT(*) AS n FROM participants").get().n;
+  const unassignedCount = listUnassignedParticipants().length;
+  const criteriaCount = db.prepare("SELECT COUNT(*) AS n FROM criteria").get().n;
+  const hasStarted = totalVotesCount() > 0;
+
+  return { participantsCount, unassignedCount, criteriaCount, hasStarted };
+}
+
+// --- Statut de la partie (fin de partie / résultats) ---
 
 function computeGameStatus() {
   const participants = db.prepare("SELECT id FROM participants").all();
@@ -312,11 +434,12 @@ function computeGameStatus() {
   return { complete: true };
 }
 
+// Classement pondéré : chaque critère compte proportionnellement à son coefficient
 function getResults() {
   const rows = db
     .prepare(
       `SELECT v.target_participant_id, v.criterion_id, v.voter_participant_id, v.score,
-              c.label AS criterion_label, c.max_note, c.position,
+              c.label AS criterion_label, c.max_note, c.position, c.coefficient,
               vp.name AS voter_name
        FROM votes v
        JOIN criteria c ON c.id = v.criterion_id
@@ -334,13 +457,19 @@ function getResults() {
   const results = Object.entries(byParticipant).map(([targetId, voteRows]) => {
     const participant = getParticipant(Number(targetId));
 
-    const ratios = voteRows.map((r) => r.score / r.max_note);
-    const overallRatio = ratios.reduce((a, b) => a + b, 0) / ratios.length;
+    const weightedSum = voteRows.reduce((sum, r) => sum + (r.score / r.max_note) * r.coefficient, 0);
+    const weightTotal = voteRows.reduce((sum, r) => sum + r.coefficient, 0);
+    const overallRatio = weightTotal > 0 ? weightedSum / weightTotal : 0;
 
     const byCriterion = {};
     voteRows.forEach((r) => {
       if (!byCriterion[r.criterion_id]) {
-        byCriterion[r.criterion_id] = { label: r.criterion_label, max_note: r.max_note, votes: [] };
+        byCriterion[r.criterion_id] = {
+          label: r.criterion_label,
+          max_note: r.max_note,
+          coefficient: r.coefficient,
+          votes: [],
+        };
       }
       byCriterion[r.criterion_id].votes.push({ voter_name: r.voter_name, score: r.score });
     });
@@ -348,6 +477,7 @@ function getResults() {
     const criteriaBreakdown = Object.values(byCriterion).map((c) => ({
       label: c.label,
       max_note: c.max_note,
+      coefficient: c.coefficient,
       votes: c.votes,
       average: Math.round((c.votes.reduce((a, b) => a + b.score, 0) / c.votes.length) * 10) / 10,
     }));
@@ -356,7 +486,8 @@ function getResults() {
       participant_id: Number(targetId),
       participant_name: participant ? participant.name : "?",
       avatar_icon: participant ? participant.avatar_icon : "👤",
-      avatar_color: participant ? participant.avatar_color : "#e8a33d",
+      avatar_color: participant ? participant.avatar_color : "#02413B",
+      avatar_image: participant ? participant.avatar_image : null,
       overall_average_out_of_10: Math.round(overallRatio * 100) / 10,
       criteria: criteriaBreakdown,
     };
@@ -369,13 +500,22 @@ function getResults() {
 // --- Reset total ---
 
 function resetDatabase() {
-  db.exec(`
-    DELETE FROM votes;
-    DELETE FROM assignments;
-    DELETE FROM criteria;
-    DELETE FROM participants;
-    DELETE FROM sqlite_sequence WHERE name IN ('participants', 'criteria', 'votes');
-  `);
+  const tx = db.transaction(() => {
+    db.exec(`
+      DELETE FROM votes;
+      DELETE FROM assignments;
+      DELETE FROM criteria;
+      DELETE FROM participants;
+    `);
+
+    const seqTableExists = db
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='sqlite_sequence'")
+      .get();
+    if (seqTableExists) {
+      db.exec(`DELETE FROM sqlite_sequence WHERE name IN ('participants', 'criteria', 'votes');`);
+    }
+  });
+  tx();
 }
 
 module.exports = {
@@ -384,13 +524,16 @@ module.exports = {
   getParticipant,
   addParticipant,
   renameParticipant,
-  setParticipantAvatar,
+  setParticipantAvatarColor,
+  setParticipantAvatarImage,
   deleteParticipant,
+  listUnassignedParticipants,
   listAssignmentsForMonth,
   getAssignmentForDate,
   getAssignmentForParticipant,
   setAssignment,
   deleteAssignment,
+  autoAssignUnassigned,
   listCriteria,
   addCriterion,
   updateCriterion,
@@ -400,6 +543,7 @@ module.exports = {
   hasVotedToday,
   listVotersForDateTarget,
   listVotes,
+  getSetupStatus,
   computeGameStatus,
   getResults,
   resetDatabase,

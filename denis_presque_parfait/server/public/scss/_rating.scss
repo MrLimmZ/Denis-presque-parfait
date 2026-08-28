@@ -1,11 +1,143 @@
 .rating-flow {
   margin-top: 12px;
+  min-height: 240px; // évite un saut de hauteur pendant les transitions de carte
+  width: 100%;
+}
+
+.rating-card {
+  will-change: transform, opacity;
+  width: 100%;
+  text-align: center;
+}
+
+.rating-step-label {
+  margin: 0 0 4px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.rating-criterion-title {
+  margin: 0 0 28px;
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+// --- Slider de notation ---
+
+.rating-slider-wrap {
+  display: flex;
+  flex-direction: column;
+  width: 100%; // ne jamais laisser le flex column "shrink-to-fit" ici, sinon le track hérite d'une largeur minuscule
+  // Padding latéral généreux : le curseur déborde de ~13-17px de chaque côté du track
+  // quand il est en position extrême (translate -50%) — sans cette marge, le
+  // overflow:hidden du conteneur parent (utilisé pour l'effet de swipe) le coupe.
+  padding: 8px 20px 4px;
+}
+
+.rating-slider-number {
+  font-size: 3.4rem;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--accent);
+  text-align: center;
+}
+
+.rating-slider-maxlabel {
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: var(--muted);
+  text-align: center;
+  margin-top: 4px;
+  margin-bottom: 36px;
+}
+
+.rating-slider-track {
+  position: relative;
+  width: 100%;
+  height: 6px;
+  background: var(--border);
+  border-radius: 999px;
+  touch-action: none; // le drag gère lui-même le scroll horizontal, pas le navigateur
+  cursor: pointer;
+}
+
+.rating-slider-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  border-radius: 999px;
+}
+
+.rating-slider-thumb {
+  position: absolute;
+  top: 50%;
+  left: 0%;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 4px solid var(--card);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  transform: translate(-50%, -50%);
+  cursor: grab;
+
+  &:active {
+    cursor: grabbing;
+  }
+}
+
+// --- Échelle de paliers, sous le track : un trait vertical par valeur possible ---
+
+.rating-slider-scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding: 0 1px; // aligne le premier/dernier trait avec les bords réels du track
+}
+
+.rating-slider-stop {
+  width: 1px;
+  height: 8px;
+  background: var(--muted);
+  opacity: 1;
+  transition: background-color 0.15s, opacity 0.15s, height 0.15s;
+}
+
+// --- Barre fixe en bas d'écran : progress + navigation sur UNE seule ligne, toujours ---
+
+.rating-fixed-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 950;
+  background: var(--card);
+  border-top: 1px solid var(--border);
+  padding: 14px 20px calc(14px + env(safe-area-inset-bottom));
+}
+
+.rating-fixed-bar-inner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+}
+
+body.has-rating-bar .wrap-center {
+  min-height: calc(100vh - 76px - env(safe-area-inset-bottom));
 }
 
 .rating-progress {
   display: flex;
   gap: 6px;
-  margin-bottom: 16px;
+  flex: 1;
+  min-width: 0;
 }
 
 .rating-progress-dot {
@@ -13,6 +145,7 @@
   height: 4px;
   border-radius: 2px;
   background: var(--border);
+  transform-origin: center;
 
   &.done {
     background: var(--accent);
@@ -24,64 +157,22 @@
   }
 }
 
-.rating-step-label {
-  margin: 0 0 4px;
-  font-size: 0.75rem;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.rating-criterion-title {
-  margin: 0 0 20px;
-  font-size: 1.3rem;
-}
-
-.rating-notes-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 24px;
-}
-
-.rating-note-btn {
-  width: 44px;
-  height: 44px;
-  border-radius: 10px;
-  background: var(--card);
-  border: 1px solid var(--border);
-  color: var(--text);
-  font-size: 1rem;
-  font-weight: 600;
-  cursor: pointer;
-
-  &:hover {
-    border-color: var(--accent);
-  }
-
-  &.selected {
-    background: var(--accent);
-    color: #1a1508;
-    border-color: var(--accent);
-  }
-}
-
 .rating-nav-row {
   display: flex;
-  justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .rating-nav-btn {
-  flex: 1;
   background: var(--accent);
-  color: #1a1508;
+  color: var(--accent-contrast);
   border: none;
   border-radius: 10px;
-  padding: 12px;
-  font-size: 0.9rem;
-  font-weight: 600;
+  padding: 10px 16px;
+  font-size: 0.82rem;
+  font-weight: 500;
   cursor: pointer;
+  white-space: nowrap;
 
   &:disabled {
     opacity: 0.4;
@@ -93,6 +184,4 @@
   background: none;
   border: 1px solid var(--border);
   color: var(--text);
-  flex: 0 0 auto;
-  padding: 12px 16px;
 }

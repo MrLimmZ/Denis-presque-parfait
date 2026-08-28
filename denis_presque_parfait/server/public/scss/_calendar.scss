@@ -11,6 +11,14 @@
   align-items: center;
   justify-content: space-between;
   margin-bottom: 12px;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.calendar-nav-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .calendar-month-label {
@@ -31,6 +39,21 @@
 
   &:hover {
     border-color: var(--accent);
+  }
+}
+
+.calendar-today-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--accent);
+    color: var(--text);
   }
 }
 
@@ -90,16 +113,24 @@
   align-items: center;
   gap: 3px;
   background: var(--accent);
-  color: #1a1508;
+  color: var(--accent-contrast);
   border-radius: 5px;
-  padding: 2px 4px;
+  padding: 3px 5px;
   font-size: 0.62rem;
   font-weight: 600;
   line-height: 1.2;
   overflow: hidden;
 
   .avatar {
-    background: rgba(255, 255, 255, 0.3) !important;
+    background: rgba(255, 255, 255, 0.28) !important;
+  }
+}
+
+.calendar-chip-draggable {
+  cursor: grab;
+
+  &:active {
+    cursor: grabbing;
   }
 }
 
@@ -111,13 +142,24 @@
 }
 
 .calendar-chip-done {
-  background: #4a8f6a;
-  color: #eafff2;
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--border);
+  opacity: 0.65;
+
+  .avatar {
+    background: var(--border) !important;
+  }
 }
 
 .calendar-chip-missed {
-  background: #c9564f;
-  color: #ffecea;
+  background: var(--bg);
+  color: var(--text);
+  border: 1.5px dashed var(--muted);
+
+  .avatar {
+    background: var(--border) !important;
+  }
 }
 
 .calendar-chip-remove {
@@ -135,32 +177,47 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin: 12px 0;
 }
 
 .draggable-pill {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: var(--card);
-  border: 1px solid var(--border);
+  color: #ffffff;
   border-radius: 20px;
   padding: 6px 14px 6px 6px;
   font-size: 0.85rem;
   cursor: grab;
   user-select: none;
 
+  .avatar {
+    background: rgba(255, 255, 255, 0.28) !important;
+  }
+
   &:active {
     cursor: grabbing;
   }
 }
 
-.draggable-pill-locked {
-  opacity: 0.5;
-  cursor: not-allowed;
+// --- Variante utilisée dans le wizard de planification : toute la largeur disponible,
+// hauteur des cellules maîtrisée (plus large que haute plutôt que carrée) ---
+
+.calendar-compact {
+  width: 100%;
+  padding: 16px;
+
+  .calendar-grid {
+    gap: 4px;
+  }
+
+  .calendar-day {
+    aspect-ratio: 1.6 / 1;
+  }
 }
+
+// --- Espacement au-dessus du calendrier (admin + jeu) ---
 
 .assignment-admin,
 .assignment-view {
-  margin-top: 28px;
+  margin-top: 20px;
 }

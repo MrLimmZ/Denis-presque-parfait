@@ -1,16 +1,67 @@
-function buildWsUrl() {
-  const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  const basePath = location.pathname.replace(/\/[^/]*$/, "/");
-  return `${proto}//${location.host}${basePath}ws`;
-}
-
 function buildBaseUrl() {
   const basePath = location.pathname.replace(/\/[^/]*$/, "/");
   return `${location.protocol}//${location.host}${basePath}`;
 }
 
+const AppWS = (function () {
+  let socket = null;
+  const messageQueue = [];
+  const listeners = new Map();
+
+  function buildWsUrl() {
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    const basePath = location.pathname.replace(/\/[^/]*$/, "/");
+    return `${proto}//${location.host}${basePath}ws`;
+  }
+
+  function emit(type, data) {
+    const set = listeners.get(type);
+    if (!set) return;
+    set.forEach((cb) => cb(data));
+  }
+
+  function connect() {
+    socket = new WebSocket(buildWsUrl());
+
+    socket.addEventListener("open", () => {
+      while (messageQueue.length > 0) socket.send(messageQueue.shift());
+      emit("_open", null);
+    });
+    socket.addEventListener("close", () => {
+      emit("_close", null);
+      setTimeout(connect, 2000);
+    });
+    socket.addEventListener("message", (event) => {
+      let data;
+      try {
+        data = JSON.parse(event.data);
+      } catch {
+        return;
+      }
+      emit(data.type, data);
+    });
+  }
+
+  function send(dataOrString) {
+    const str = typeof dataOrString === "string" ? dataOrString : JSON.stringify(dataOrString);
+    if (socket && socket.readyState === WebSocket.OPEN) socket.send(str);
+    else messageQueue.push(str);
+  }
+
+  function on(type, callback) {
+    if (!listeners.has(type)) listeners.set(type, new Set());
+    listeners.get(type).add(callback);
+    return () => listeners.get(type).delete(callback);
+  }
+
+  connect();
+
+  return { send, on };
+})();
+
 function connectWS({
   onParticipants,
+  onUnassignedParticipants,
   onCriteria,
   onCriteriaError,
   onAssignmentsList,
@@ -18,90 +69,65 @@ function connectWS({
   onAssignmentForParticipant,
   onAssignmentUpdate,
   onAssignmentError,
+  onAssignmentsRandomDone,
   onVotesList,
   onVotesSubmitted,
   onHasVotedToday,
   onVotersForDate,
   onVoterUpdate,
+  onSetupStatus,
+  onParticipantsError,
   onGameStatus,
   onGameComplete,
   onDbResetDone,
+  onServerError,
   onOpen,
   onClose,
 } = {}) {
-  const messageQueue = [];
+  if (onOpen) AppWS.on("_open", onOpen);
+  if (onClose) AppWS.on("_close", onClose);
+  if (onParticipants) AppWS.on("participants", (d) => onParticipants(d.list));
+  if (onUnassignedParticipants) AppWS.on("participants:unassigned", (d) => onUnassignedParticipants(d.list));
+  if (onCriteria) AppWS.on("criteria", (d) => onCriteria(d.list));
+  if (onCriteriaError) AppWS.on("criteria:error", (d) => onCriteriaError(d.message));
+  if (onAssignmentsList) AppWS.on("assignments:list", (d) => onAssignmentsList(d.month, d.list));
+  if (onAssignmentGet) AppWS.on("assignments:get", (d) => onAssignmentGet(d.date, d.assignment));
+  if (onAssignmentForParticipant)
+    AppWS.on("assignments:get_for_participant", (d) => onAssignmentForParticipant(d.participant_id, d.date));
+  if (onAssignmentUpdate)
+    AppWS.on("assignments:update", (d) =>
+      onAssignmentUpdate(
+        d.date,
+        d.participant_id,
+        d.participant_name,
+        d.has_votes,
+        d.avatar_icon,
+        d.avatar_color,
+        d.avatar_image
+      )
+    );
+  if (onAssignmentError) AppWS.on("assignments:error", (d) => onAssignmentError(d.message));
+  if (onAssignmentsRandomDone) AppWS.on("assignments:random:done", onAssignmentsRandomDone);
+  if (onVotesList) AppWS.on("votes:list", (d) => onVotesList(d.list));
+  if (onVotesSubmitted) AppWS.on("votes:submitted", onVotesSubmitted);
+  if (onHasVotedToday) AppWS.on("votes:has_voted_today", (d) => onHasVotedToday(d.hasVoted));
+  if (onVotersForDate)
+    AppWS.on("votes:voters_for_date", (d) => onVotersForDate(d.date, d.target_participant_id, d.voter_ids));
+  if (onVoterUpdate)
+    AppWS.on("votes:voter_update", (d) => onVoterUpdate(d.date, d.target_participant_id, d.voter_participant_id));
+  if (onSetupStatus) AppWS.on("setup:status", (d) => onSetupStatus(d.status));
+  if (onParticipantsError) AppWS.on("participants:error", (d) => onParticipantsError(d.message));
+  if (onGameStatus) AppWS.on("game:status", (d) => onGameStatus(d.complete, d.results));
+  if (onGameComplete) AppWS.on("game:complete", (d) => onGameComplete(d.results));
+  if (onDbResetDone) AppWS.on("db:reset:done", onDbResetDone);
+  if (onServerError) AppWS.on("server:error", (d) => onServerError(d.message));
 
-  const handle = {
-    socket: null,
-    send(data) {
-      if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-        this.socket.send(data);
-      } else {
-        messageQueue.push(data);
-      }
-    },
+  return {
+    send: AppWS.send,
     get readyState() {
-      return this.socket ? this.socket.readyState : WebSocket.CLOSED;
+      return WebSocket.OPEN;
     },
   };
-
-  function open() {
-    const ws = new WebSocket(buildWsUrl());
-    handle.socket = ws;
-
-    ws.addEventListener("open", () => {
-      while (messageQueue.length > 0) {
-        ws.send(messageQueue.shift());
-      }
-      onOpen && onOpen();
-    });
-    ws.addEventListener("close", () => {
-      onClose && onClose();
-      setTimeout(open, 2000);
-    });
-    ws.addEventListener("message", (event) => {
-      let data;
-      try {
-        data = JSON.parse(event.data);
-      } catch {
-        return;
-      }
-      if (data.type === "participants" && onParticipants) onParticipants(data.list);
-      if (data.type === "criteria" && onCriteria) onCriteria(data.list);
-      if (data.type === "criteria:error" && onCriteriaError) onCriteriaError(data.message);
-      if (data.type === "assignments:list" && onAssignmentsList) onAssignmentsList(data.month, data.list);
-      if (data.type === "assignments:get" && onAssignmentGet) onAssignmentGet(data.date, data.assignment);
-      if (data.type === "assignments:get_for_participant" && onAssignmentForParticipant) {
-        onAssignmentForParticipant(data.participant_id, data.date);
-      }
-      if (data.type === "assignments:update" && onAssignmentUpdate) {
-        onAssignmentUpdate(
-          data.date,
-          data.participant_id,
-          data.participant_name,
-          data.has_votes,
-          data.avatar_icon,
-          data.avatar_color
-        );
-      }
-      if (data.type === "assignments:error" && onAssignmentError) onAssignmentError(data.message);
-      if (data.type === "votes:list" && onVotesList) onVotesList(data.list);
-      if (data.type === "votes:submitted" && onVotesSubmitted) onVotesSubmitted();
-      if (data.type === "votes:has_voted_today" && onHasVotedToday) onHasVotedToday(data.hasVoted);
-      if (data.type === "votes:voters_for_date" && onVotersForDate) {
-        onVotersForDate(data.date, data.target_participant_id, data.voter_ids);
-      }
-      if (data.type === "votes:voter_update" && onVoterUpdate) {
-        onVoterUpdate(data.date, data.target_participant_id, data.voter_participant_id);
-      }
-      if (data.type === "game:status" && onGameStatus) onGameStatus(data.complete, data.results);
-      if (data.type === "game:complete" && onGameComplete) onGameComplete(data.results);
-      if (data.type === "db:reset:done" && onDbResetDone) onDbResetDone();
-    });
-  }
-
-  open();
-  return handle;
 }
 
 // --- Cookies ---
@@ -136,15 +162,9 @@ function formatDateFr(dateStr) {
 }
 
 // --- Loader avec délai minimum d'affichage ---
-// Évite l'effet de flash quand les données arrivent quasi instantanément (surtout en local).
-// Usage : au chargement de la page, on note `const loadStart = Date.now();`
-// puis, quand tout est prêt : `withMinDelay(loadStart, 300, () => { ...révèle la page... });`
 function withMinDelay(startTime, minMs, callback) {
   const elapsed = Date.now() - startTime;
   const remaining = minMs - elapsed;
-  if (remaining > 0) {
-    setTimeout(callback, remaining);
-  } else {
-    callback();
-  }
+  if (remaining > 0) setTimeout(callback, remaining);
+  else callback();
 }
