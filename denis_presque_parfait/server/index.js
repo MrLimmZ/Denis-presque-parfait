@@ -357,7 +357,10 @@ function handleMessage(ws, msg) {
     ws.send(JSON.stringify({ type: "video:generating" }));
     recordResultsVideo({ port: PORT })
       .then((filePath) => {
-        broadcast({ type: "video:generated", ok: !!filePath, url: "/videos/results-latest.mp4?t=" + Date.now() });
+        // Chemin relatif (sans "/" initial) : le client construit l'URL complète via
+        // buildBaseUrl(), qui tient compte du préfixe Ingress HA dynamique — une URL
+        // absolue "/videos/..." ignorerait ce préfixe et pointerait sur la racine de HA.
+        broadcast({ type: "video:generated", ok: !!filePath, url: "videos/results-latest.mp4?t=" + Date.now() });
       })
       .catch((err) => {
         broadcast({ type: "video:generated", ok: false, error: err.message });

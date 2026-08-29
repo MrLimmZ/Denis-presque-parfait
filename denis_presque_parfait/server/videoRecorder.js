@@ -1,5 +1,6 @@
 const path = require("path");
 const fs = require("fs");
+const { execFile } = require("child_process");
 const puppeteer = require("puppeteer-core");
 const { PuppeteerScreenRecorder } = require("puppeteer-screen-recorder");
 
@@ -24,21 +25,56 @@ function resolveExecutablePath() {
   );
 }
 
-// Qualité relevée : Full HD, framerate plus élevé, bitrate confortable, encodage plus
-// soigné (preset "fast" au lieu de "ultrafast"). Ajuste videoPreset vers "ultrafast"
-// si l'encodage s'avère trop lent sur le Pi en production.
+function resolveFfmpegPath() {
+  try {
+    return require("@ffmpeg-installer/ffmpeg").path;
+  } catch {
+    return "ffmpeg";
+  }
+}
+
 const RECORDER_CONFIG = {
   followNewTab: false,
   fps: 30,
-  videoFrame: { width: 1920, height: 1080 }, // Full HD, natif pour un écran de TV
-  videoCrf: 16, // plus bas = meilleure qualité (12-18 = très bon, 23 = par défaut ffmpeg)
+  videoFrame: { width: 1920, height: 1080 },
+  videoCrf: 16,
   videoCodec: "libx264",
   videoPreset: "fast",
-  videoBitrate: 6000, // 6 Mbps, confortable pour du 1080p30 sans banding
+  videoBitrate: 6000,
   autopad: { color: "#15161a" },
 };
 
 let isRecording = false;
+
+// Réécrit le MP4 brut (silencieux, moov atom en fin de fichier) en ajoutant une piste
+// audio silencieuse + le flag faststart — indispensable pour une lecture fiable via
+// AirPlay sur Apple TV (sans ça : erreur 500 sur /playback-info côté device).
+// Ne ré-encode PAS la vidéo (-c:v copy), donc quasi instantané.
+function postProcessForAirPlay(inputPath, outputPath) {
+  return new Promise((resolve, reject) => {
+    const ffmpegPath = resolveFfmpegPath();
+    const args = [
+      "-y",
+      "-i", inputPath,
+      "-f", "lavfi",
+      "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+      "-shortest",
+      "-c:v", "copy",
+      "-c:a", "aac",
+      "-b:a", "128k",
+      "-movflags", "+faststart",
+      outputPath,
+    ];
+
+    execFile(ffmpegPath, args, (err, stdout, stderr) => {
+      if (err) {
+        reject(new Error(`ffmpeg post-traitement échoué: ${stderr || err.message}`));
+      } else {
+        resolve();
+      }
+    });
+  });
+}
 
 async function recordResultsVideo({ port, durationMs = 12000 } = {}) {
   if (isRecording) {
@@ -47,7 +83,8 @@ async function recordResultsVideo({ port, durationMs = 12000 } = {}) {
   }
   isRecording = true;
 
-  const tempPath = path.join(VIDEOS_DIR, `results-${Date.now()}.mp4`);
+  const rawPath = path.join(VIDEOS_DIR, `results-raw-${Date.now()}.mp4`);
+  const tempFinalPath = path.join(VIDEOS_DIR, `results-${Date.now()}.mp4`);
   const finalPath = path.join(VIDEOS_DIR, "results-latest.mp4");
 
   let browser;
@@ -63,7 +100,7 @@ async function recordResultsVideo({ port, durationMs = 12000 } = {}) {
         "--disable-dev-shm-usage",
         "--disable-gpu",
         `--window-size=${RECORDER_CONFIG.videoFrame.width},${RECORDER_CONFIG.videoFrame.height}`,
-        "--force-device-scale-factor=1", // évite un rendu flou/sur-échantillonné selon l'écran hôte
+        "--force-device-scale-factor=1",
       ],
     });
 
@@ -72,8 +109,6 @@ async function recordResultsVideo({ port, durationMs = 12000 } = {}) {
 
     page.on("pageerror", (err) => console.error("[PAGE ERROR]", err.message));
     page.on("requestfailed", (req) => {
-      // Le rechargement à chaud (livereload) échoue toujours en headless, sans impact —
-      // on l'ignore pour ne pas polluer les logs utiles.
       if (req.url().includes("livereload")) return;
       console.error("[PAGE REQUEST FAILED]", req.url(), req.failure() && req.failure().errorText);
     });
@@ -83,7 +118,7 @@ async function recordResultsVideo({ port, durationMs = 12000 } = {}) {
     });
 
     recorder = new PuppeteerScreenRecorder(page, RECORDER_CONFIG);
-    await recorder.start(tempPath);
+    await recorder.start(rawPath);
     console.log("[VIDEO] Enregistrement démarré, navigation vers results.html...");
 
     await page.goto(`http://127.0.0.1:${port}/results.html?auto=1`, {
@@ -99,14 +134,20 @@ async function recordResultsVideo({ port, durationMs = 12000 } = {}) {
     await browser.close();
     browser = null;
 
-    fs.renameSync(tempPath, finalPath);
+    console.log("[VIDEO] Post-traitement (piste audio + faststart) pour compatibilité AirPlay...");
+    await postProcessForAirPlay(rawPath, tempFinalPath);
+    fs.unlinkSync(rawPath);
+
+    fs.renameSync(tempFinalPath, finalPath);
     console.log("[VIDEO] Vidéo des résultats générée :", finalPath);
     return finalPath;
   } catch (err) {
     console.error("[VIDEO] Échec de l'enregistrement :", err);
     if (recorder) await recorder.stop().catch(() => {});
     if (browser) await browser.close().catch(() => {});
-    if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+    [rawPath, tempFinalPath].forEach((p) => {
+      if (fs.existsSync(p)) fs.unlinkSync(p);
+    });
     return null;
   } finally {
     isRecording = false;

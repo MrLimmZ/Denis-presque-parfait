@@ -385,7 +385,9 @@
       if (data.ok) {
         hasGeneratedVideo = true;
         tvVideoPreviewWrap.style.display = "block";
-        tvVideoPreview.src = data.url;
+        // buildBaseUrl() (déjà utilisée pour le WebSocket) tient compte du préfixe
+        // Ingress HA — indispensable ici, sinon l'URL pointe hors du bon dossier.
+        tvVideoPreview.src = buildBaseUrl() + data.url;
         tvVideoPreview.load();
         tvVideoPreview.play().catch(() => {});
       } else {
