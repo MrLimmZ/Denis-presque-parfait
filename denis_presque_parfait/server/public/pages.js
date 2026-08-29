@@ -90,8 +90,8 @@ PageModules.register("home", {
           currentSetupStatus.participantsCount === 0
             ? "Aucun participant n'a encore été ajouté."
             : currentSetupStatus.unassignedCount > 0
-            ? "Les participants n'ont pas encore tous une date."
-            : "Les critères de notation ne sont pas encore définis.";
+              ? "Les participants n'ont pas encore tous une date."
+              : "Les critères de notation ne sont pas encore définis.";
       } else {
         selectionEl.style.display = "block";
         setupNoticeEl.style.display = "none";
@@ -182,7 +182,13 @@ PageModules.register("home", {
 
     const cleanupDecor = () => document.body.classList.remove("has-home-decor");
 
-    return [offParticipants, offSetupStatus, offGameStatus, offGameComplete, cleanupDecor];
+    return [
+      offParticipants,
+      offSetupStatus,
+      offGameStatus,
+      offGameComplete,
+      cleanupDecor,
+    ];
   },
 });
 
@@ -251,7 +257,7 @@ PageModules.register("game", {
     function renderVotersChecklist() {
       if (!todaysAssignment || allParticipants.length === 0) return "";
       const expectedVoters = allParticipants.filter(
-        (p) => String(p.id) !== String(todaysAssignment.participant_id)
+        (p) => String(p.id) !== String(todaysAssignment.participant_id),
       );
       const items = expectedVoters
         .map((p) => {
@@ -298,21 +304,29 @@ PageModules.register("game", {
     function renderContent() {
       if (!assignmentLoaded || !criteriaLoaded) return;
 
-      // Si un flow de notation était en cours d'affichage, on le détruit avant de
-      // reconstruire l'écran (évite une barre fixe orpheline si l'état change entre-temps).
       if (activeRatingFlow) {
         activeRatingFlow.destroy();
         activeRatingFlow = null;
       }
 
       if (!todaysAssignment) {
-        contentEl.innerHTML = `<p class="hint">Pas de repas prévu aujourd'hui.</p>`;
+        contentEl.innerHTML = `
+          <div class="state-card">
+            <div class="state-card-icon">
+              ${renderAvatarHTML(todaysAssignment, "xl")}
+            </div>
+            <span class="state-card-eyebrow">Aujourd'hui</span>
+            <h2 class="state-card-title">Pas de repas de prévu.</h2>
+            <p class="state-card-subtitle">Prends ton temps de réfléchir à tes recettes..</p>
+          </div>
+        `;
         showCalendar();
         reveal();
         return;
       }
 
-      const isMyDay = String(todaysAssignment.participant_id) === String(myParticipantId);
+      const isMyDay =
+        String(todaysAssignment.participant_id) === String(myParticipantId);
 
       if (isMyDay) {
         contentEl.innerHTML = `
@@ -378,8 +392,15 @@ PageModules.register("game", {
       todaysAssignment = data.assignment;
       assignmentLoaded = true;
 
-      if (data.assignment && String(data.assignment.participant_id) !== String(myParticipantId)) {
-        AppWS.send({ type: "votes:has_voted_today", date: today, voter_participant_id: Number(myParticipantId) });
+      if (
+        data.assignment &&
+        String(data.assignment.participant_id) !== String(myParticipantId)
+      ) {
+        AppWS.send({
+          type: "votes:has_voted_today",
+          date: today,
+          voter_participant_id: Number(myParticipantId),
+        });
         AppWS.send({
           type: "votes:voters_for_date",
           date: today,
@@ -401,14 +422,22 @@ PageModules.register("game", {
     });
 
     const offVotersForDate = AppWS.on("votes:voters_for_date", (data) => {
-      if (data.date !== today || !todaysAssignment || data.target_participant_id !== todaysAssignment.participant_id)
+      if (
+        data.date !== today ||
+        !todaysAssignment ||
+        data.target_participant_id !== todaysAssignment.participant_id
+      )
         return;
       votersForToday = new Set(data.voter_ids || []);
       updateVotersChecklistIfVisible();
     });
 
     const offVoterUpdate = AppWS.on("votes:voter_update", (data) => {
-      if (data.date !== today || !todaysAssignment || data.target_participant_id !== todaysAssignment.participant_id)
+      if (
+        data.date !== today ||
+        !todaysAssignment ||
+        data.target_participant_id !== todaysAssignment.participant_id
+      )
         return;
       votersForToday.add(data.voter_participant_id);
       updateVotersChecklistIfVisible();
@@ -424,7 +453,9 @@ PageModules.register("game", {
     });
     calendar.init();
 
-    const offAssignmentsList = AppWS.on("assignments:list", (data) => calendar.setAssignments(data.month, data.list));
+    const offAssignmentsList = AppWS.on("assignments:list", (data) =>
+      calendar.setAssignments(data.month, data.list),
+    );
     const offAssignmentUpdate = AppWS.on("assignments:update", (data) => {
       calendar.applyUpdate(
         data.date,
@@ -433,7 +464,7 @@ PageModules.register("game", {
         data.has_votes,
         data.avatar_icon,
         data.avatar_color,
-        data.avatar_image
+        data.avatar_image,
       );
       if (data.date === today) {
         todaysAssignment = data.participant_id
@@ -558,7 +589,11 @@ PageModules.register("results", {
     }
 
     function buildDetailTable(result) {
-      const voterNames = [...new Set(result.criteria.flatMap((c) => c.votes.map((v) => v.voter_name)))];
+      const voterNames = [
+        ...new Set(
+          result.criteria.flatMap((c) => c.votes.map((v) => v.voter_name)),
+        ),
+      ];
       let html = `<table class="votes-table"><thead><tr><th>Critère</th>`;
       voterNames.forEach((name) => (html += `<th>${name}</th>`));
       html += `<th>Moyenne</th></tr></thead><tbody>`;
@@ -597,7 +632,8 @@ PageModules.register("results", {
 
         row.addEventListener("click", () => {
           const isCurrentlyOpen = detail.style.display !== "none";
-          if (openDetailEl && openDetailEl !== detail) openDetailEl.style.display = "none";
+          if (openDetailEl && openDetailEl !== detail)
+            openDetailEl.style.display = "none";
           detail.style.display = isCurrentlyOpen ? "none" : "block";
           openDetailEl = isCurrentlyOpen ? null : detail;
         });
@@ -628,7 +664,7 @@ PageModules.register("results", {
             resultsContentEl.style.display = "block";
           });
         },
-        { once: true }
+        { once: true },
       );
     }
 

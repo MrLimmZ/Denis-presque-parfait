@@ -5,15 +5,11 @@
   flex-direction: column;
   align-items: center;
   text-align: center;
-  // Le centrage vertical est géré une seule fois, par .wrap-center (le conteneur parent) —
-  // pas ici, pour que la liste se comporte exactement comme les state-card (même logique
-  // de centrage, peu importe la hauteur réelle du contenu).
 }
 
 .profile-select-label {
   display: block;
-  font-size: 1rem;
-  margin-bottom: 18px;
+  margin-bottom: 32px;
 }
 
 .participants-list {
