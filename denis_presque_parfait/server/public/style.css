@@ -40,7 +40,7 @@ body {
 
 .wrap {
   width: 100%;
-  max-width: 420px;
+  max-width: 696px;
   margin: 0 auto;
   padding: 96px 24px 32px;
   opacity: 0;
@@ -430,7 +430,7 @@ input[type=text]:focus {
   .participants-list {
     display: flex;
     flex-direction: row;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     justify-content: center;
     gap: 20px;
     width: 100%;
