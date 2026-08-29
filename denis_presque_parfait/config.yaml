@@ -1,11 +1,12 @@
 name: "Un Denis Presque Parfait"
-version: "0.1.11"
+version: "0.1.12"
 slug: "denis_presque_parfait"
 description: "Jeu de notation familial - MVP live input"
 url: "https://github.com/toi/denis_presque_parfait"
 arch:
   - aarch64
 init: false
+homeassistant_api: true
 ingress: true
 ingress_port: 8080
 panel_icon: mdi:silverware-fork-knife

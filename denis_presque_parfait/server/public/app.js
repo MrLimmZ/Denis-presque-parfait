@@ -41,6 +41,19 @@ document.addEventListener("DOMContentLoaded", () => {
   initLogo();
   AppBoot.start();
 
+  // Mode capture automatisée (Puppeteer, pipeline vidéo des résultats) : une seule page
+  // chargée une seule fois, jamais de navigation SPA — Barba n'a aucune utilité ici et
+  // peut échouer dans le contexte headless. On monte directement le module de la page
+  // sans passer par lui, pour ne jamais dépendre de son bon fonctionnement.
+  const isAutoMode = new URLSearchParams(location.search).get("auto") === "1";
+  if (isAutoMode) {
+    const initialContainer = document.querySelector('[data-barba="container"]');
+    if (initialContainer) {
+      PageModules.mount(initialContainer.dataset.barbaNamespace, initialContainer);
+    }
+    return;
+  }
+
   barba.init({
     transitions: [
       {

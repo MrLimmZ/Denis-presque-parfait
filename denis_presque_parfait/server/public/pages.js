@@ -57,7 +57,10 @@ PageModules.register("home", {
       hasAnimatedParticipants = true;
 
       if (typeof gsap === "undefined") {
-        gsap.set(latestButtons, { opacity: 1, scale: 1, y: 0, rotate: 0 }); // fallback sans lib
+        latestButtons.forEach((btn) => {
+          btn.style.opacity = "1";
+          btn.style.transform = "none";
+        });
         return;
       }
 
@@ -90,8 +93,8 @@ PageModules.register("home", {
           currentSetupStatus.participantsCount === 0
             ? "Aucun participant n'a encore été ajouté."
             : currentSetupStatus.unassignedCount > 0
-              ? "Les participants n'ont pas encore tous une date."
-              : "Les critères de notation ne sont pas encore définis.";
+            ? "Les participants n'ont pas encore tous une date."
+            : "Les critères de notation ne sont pas encore définis.";
       } else {
         selectionEl.style.display = "block";
         setupNoticeEl.style.display = "none";
@@ -101,8 +104,6 @@ PageModules.register("home", {
         AppBoot.ready(() => {
           loaderEl.style.display = "none";
           container.classList.add("is-ready");
-          // L'animation ne démarre qu'une fois le loader retiré et la page révélée,
-          // jamais pendant que le loader est encore par-dessus.
           if (!notReady) animateParticipants();
         });
       });
@@ -134,8 +135,6 @@ PageModules.register("home", {
         latestButtons.push(btn);
       });
 
-      // État de départ posé immédiatement (caché, décalé, tourné), mais l'animation
-      // qui les amène à leur position finale n'est déclenchée que dans reveal().
       if (typeof gsap !== "undefined") {
         gsap.set(latestButtons, {
           opacity: 0,
@@ -182,13 +181,7 @@ PageModules.register("home", {
 
     const cleanupDecor = () => document.body.classList.remove("has-home-decor");
 
-    return [
-      offParticipants,
-      offSetupStatus,
-      offGameStatus,
-      offGameComplete,
-      cleanupDecor,
-    ];
+    return [offParticipants, offSetupStatus, offGameStatus, offGameComplete, cleanupDecor];
   },
 });
 
@@ -227,7 +220,7 @@ PageModules.register("game", {
     let hasRevealed = false;
     let redirecting = false;
     let gameStatusKnown = false;
-    let activeRatingFlow = null; // référence à l'instance en cours, pour pouvoir la détruire au démontage
+    let activeRatingFlow = null;
 
     function reveal() {
       if (redirecting || hasRevealed) return;
@@ -257,7 +250,7 @@ PageModules.register("game", {
     function renderVotersChecklist() {
       if (!todaysAssignment || allParticipants.length === 0) return "";
       const expectedVoters = allParticipants.filter(
-        (p) => String(p.id) !== String(todaysAssignment.participant_id),
+        (p) => String(p.id) !== String(todaysAssignment.participant_id)
       );
       const items = expectedVoters
         .map((p) => {
@@ -310,23 +303,13 @@ PageModules.register("game", {
       }
 
       if (!todaysAssignment) {
-        contentEl.innerHTML = `
-          <div class="state-card">
-            <div class="state-card-icon">
-              ${renderAvatarHTML(todaysAssignment, "xl")}
-            </div>
-            <span class="state-card-eyebrow">Aujourd'hui</span>
-            <h2 class="state-card-title">Pas de repas de prévu.</h2>
-            <p class="state-card-subtitle">Prends ton temps de réfléchir à tes recettes..</p>
-          </div>
-        `;
+        contentEl.innerHTML = `<p class="hint">Pas de repas prévu aujourd'hui.</p>`;
         showCalendar();
         reveal();
         return;
       }
 
-      const isMyDay =
-        String(todaysAssignment.participant_id) === String(myParticipantId);
+      const isMyDay = String(todaysAssignment.participant_id) === String(myParticipantId);
 
       if (isMyDay) {
         contentEl.innerHTML = `
@@ -362,7 +345,7 @@ PageModules.register("game", {
         container: ratingContainer,
         criteria: criteriaList,
         onComplete: (scores) => {
-          activeRatingFlow = null; // déjà auto-détruit en interne par rating.js avant l'appel
+          activeRatingFlow = null;
           AppWS.send({
             type: "votes:submit",
             date: today,
@@ -392,15 +375,8 @@ PageModules.register("game", {
       todaysAssignment = data.assignment;
       assignmentLoaded = true;
 
-      if (
-        data.assignment &&
-        String(data.assignment.participant_id) !== String(myParticipantId)
-      ) {
-        AppWS.send({
-          type: "votes:has_voted_today",
-          date: today,
-          voter_participant_id: Number(myParticipantId),
-        });
+      if (data.assignment && String(data.assignment.participant_id) !== String(myParticipantId)) {
+        AppWS.send({ type: "votes:has_voted_today", date: today, voter_participant_id: Number(myParticipantId) });
         AppWS.send({
           type: "votes:voters_for_date",
           date: today,
@@ -422,22 +398,14 @@ PageModules.register("game", {
     });
 
     const offVotersForDate = AppWS.on("votes:voters_for_date", (data) => {
-      if (
-        data.date !== today ||
-        !todaysAssignment ||
-        data.target_participant_id !== todaysAssignment.participant_id
-      )
+      if (data.date !== today || !todaysAssignment || data.target_participant_id !== todaysAssignment.participant_id)
         return;
       votersForToday = new Set(data.voter_ids || []);
       updateVotersChecklistIfVisible();
     });
 
     const offVoterUpdate = AppWS.on("votes:voter_update", (data) => {
-      if (
-        data.date !== today ||
-        !todaysAssignment ||
-        data.target_participant_id !== todaysAssignment.participant_id
-      )
+      if (data.date !== today || !todaysAssignment || data.target_participant_id !== todaysAssignment.participant_id)
         return;
       votersForToday.add(data.voter_participant_id);
       updateVotersChecklistIfVisible();
@@ -453,9 +421,7 @@ PageModules.register("game", {
     });
     calendar.init();
 
-    const offAssignmentsList = AppWS.on("assignments:list", (data) =>
-      calendar.setAssignments(data.month, data.list),
-    );
+    const offAssignmentsList = AppWS.on("assignments:list", (data) => calendar.setAssignments(data.month, data.list));
     const offAssignmentUpdate = AppWS.on("assignments:update", (data) => {
       calendar.applyUpdate(
         data.date,
@@ -464,7 +430,7 @@ PageModules.register("game", {
         data.has_votes,
         data.avatar_icon,
         data.avatar_color,
-        data.avatar_image,
+        data.avatar_image
       );
       if (data.date === today) {
         todaysAssignment = data.participant_id
@@ -498,9 +464,6 @@ PageModules.register("game", {
     AppWS.send({ type: "game:status" });
     AppWS.send({ type: "assignments:get", date: today });
 
-    // Nettoyage explicite de la barre fixe de notation si on quitte la page en cours de route
-    // (elle est attachée directement à document.body, donc jamais retirée automatiquement
-    // par le swap de conteneur Barba).
     const cleanupRatingBar = () => {
       if (activeRatingFlow) {
         activeRatingFlow.destroy();
@@ -557,17 +520,35 @@ PageModules.register("results", {
           return;
         }
         countdownNumberEl.textContent = steps[i];
-        countdownNumberEl.classList.remove("countdown-pulse");
-        void countdownNumberEl.offsetWidth;
-        countdownNumberEl.classList.add("countdown-pulse");
+        if (typeof gsap !== "undefined") {
+          gsap.fromTo(
+            countdownNumberEl,
+            { scale: 0.3, opacity: 0, rotate: gsap.utils.random(-12, 12) },
+            { scale: 1, opacity: 1, rotate: 0, duration: 0.5, ease: "back.out(3)" }
+          );
+        }
         i += 1;
         setTimeout(next, 800);
       }
       next();
     }
 
-    function medalFor(index) {
-      return ["🥇", "🥈", "🥉"][index] || "";
+    // Anime un chiffre de 0 jusqu'à sa valeur finale (effet "compteur qui grimpe").
+    function animateCountUp(el, finalValue, duration = 0.9, delay = 0) {
+      if (typeof gsap === "undefined") {
+        el.textContent = finalValue.toFixed(1);
+        return;
+      }
+      const proxy = { value: 0 };
+      gsap.to(proxy, {
+        value: finalValue,
+        duration,
+        delay,
+        ease: "power2.out",
+        onUpdate: () => {
+          el.textContent = proxy.value.toFixed(1);
+        },
+      });
     }
 
     function renderPodium(results) {
@@ -578,22 +559,19 @@ PageModules.register("results", {
         const r = top3[i];
         const block = document.createElement("div");
         block.className = `podium-block podium-rank-${i + 1}`;
+        block.dataset.rankIndex = i;
         block.innerHTML = `
-          <span class="podium-medal">${medalFor(i)}</span>
+          <span class="podium-rank-badge">${i + 1}</span>
           ${renderAvatarHTML(r, "lg")}
           <span class="podium-name">${r.participant_name}</span>
-          <span class="podium-score">${r.overall_average_out_of_10}/10</span>
+          <span class="podium-score" data-final="${r.overall_average_out_of_10}">0.0</span>
         `;
         podiumEl.appendChild(block);
       });
     }
 
     function buildDetailTable(result) {
-      const voterNames = [
-        ...new Set(
-          result.criteria.flatMap((c) => c.votes.map((v) => v.voter_name)),
-        ),
-      ];
+      const voterNames = [...new Set(result.criteria.flatMap((c) => c.votes.map((v) => v.voter_name)))];
       let html = `<table class="votes-table"><thead><tr><th>Critère</th>`;
       voterNames.forEach((name) => (html += `<th>${name}</th>`));
       html += `<th>Moyenne</th></tr></thead><tbody>`;
@@ -622,7 +600,7 @@ PageModules.register("results", {
           <span class="ranking-position">${index + 1}</span>
           ${renderAvatarHTML(r, "sm")}
           <span class="ranking-name">${r.participant_name}</span>
-          <span class="ranking-score">${r.overall_average_out_of_10}/10</span>
+          <span class="ranking-score" data-final="${r.overall_average_out_of_10}">0.0</span>
         `;
 
         const detail = document.createElement("div");
@@ -632,8 +610,7 @@ PageModules.register("results", {
 
         row.addEventListener("click", () => {
           const isCurrentlyOpen = detail.style.display !== "none";
-          if (openDetailEl && openDetailEl !== detail)
-            openDetailEl.style.display = "none";
+          if (openDetailEl && openDetailEl !== detail) openDetailEl.style.display = "none";
           detail.style.display = isCurrentlyOpen ? "none" : "block";
           openDetailEl = isCurrentlyOpen ? null : detail;
         });
@@ -644,9 +621,83 @@ PageModules.register("results", {
       });
     }
 
+    function animateResultsReveal() {
+      if (typeof gsap === "undefined") {
+        podiumEl.querySelectorAll(".podium-score").forEach((el) => (el.textContent = Number(el.dataset.final).toFixed(1)));
+        rankingListEl.querySelectorAll(".ranking-score").forEach((el) => (el.textContent = Number(el.dataset.final).toFixed(1)));
+        return;
+      }
+
+      const podiumBlocks = [...podiumEl.querySelectorAll(".podium-block")];
+      const byRank = (rank) => podiumBlocks.find((b) => Number(b.dataset.rankIndex) === rank);
+      const revealOrder = [2, 1, 0].map(byRank).filter(Boolean);
+
+      gsap.set(podiumBlocks, { opacity: 0, y: 40, scale: 0.7 });
+
+      const tl = gsap.timeline();
+      revealOrder.forEach((block, i) => {
+        tl.to(
+          block,
+          {
+            opacity: 1,
+            y: 0,
+            scale: 1,
+            rotate: 0,
+            duration: 0.55,
+            ease: "back.out(2.2)",
+            onStart: () => {
+              const scoreEl = block.querySelector(".podium-score");
+              animateCountUp(scoreEl, Number(scoreEl.dataset.final), 0.7);
+            },
+          },
+          i === 0 ? 0 : "+=0.15"
+        );
+      });
+
+      const rankingItems = [...rankingListEl.querySelectorAll(".ranking-item")];
+      if (rankingItems.length > 0) {
+        gsap.set(rankingItems, {
+          opacity: 0,
+          scale: 0.5,
+          y: () => gsap.utils.random(-20, 20),
+          rotate: () => gsap.utils.random(-8, 8),
+        });
+
+        tl.to(
+          rankingItems,
+          {
+            opacity: 1,
+            scale: 1,
+            y: 0,
+            rotate: 0,
+            duration: 0.5,
+            ease: "back.out(2.4)",
+            stagger: 0.07,
+            onStart: function () {
+              const scoreEl = this.targets()[0].querySelector(".ranking-score");
+              if (scoreEl) animateCountUp(scoreEl, Number(scoreEl.dataset.final), 0.5);
+            },
+          },
+          "+=0.1"
+        );
+      }
+    }
+
+    const autoMode = new URLSearchParams(location.search).get("auto") === "1";
+
     function showResults(results) {
       renderPodium(results);
       renderRankingList(results);
+
+      if (autoMode) {
+        loaderEl.style.display = "none";
+        countdownOverlay.style.display = "flex";
+        runCountdown(() => {
+          resultsContentEl.style.display = "block";
+          animateResultsReveal();
+        });
+        return;
+      }
 
       withMinDelay(loadStart, 300, () => {
         AppBoot.ready(() => {
@@ -662,9 +713,10 @@ PageModules.register("results", {
           countdownOverlay.style.display = "flex";
           runCountdown(() => {
             resultsContentEl.style.display = "block";
+            animateResultsReveal();
           });
         },
-        { once: true },
+        { once: true }
       );
     }
 
@@ -672,7 +724,7 @@ PageModules.register("results", {
       if (data.complete && data.results) {
         showResults(data.results);
       } else {
-        barba.go("index.html");
+        window.location.href = "index.html";
       }
     });
 

@@ -38,6 +38,11 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now')),
     UNIQUE(date, voter_participant_id, criterion_id)
   );
+
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT
+  );
 `);
 
 // --- Migrations légères (colonnes ajoutées après coup, rétrocompatibles) ---
@@ -74,6 +79,20 @@ function totalVotesCount() {
   return db.prepare("SELECT COUNT(*) AS n FROM votes").get().n;
 }
 
+// --- Réglages (clé/valeur) ---
+
+function getSetting(key) {
+  const row = db.prepare("SELECT value FROM settings WHERE key = ?").get(key);
+  return row ? row.value : null;
+}
+
+function setSetting(key, value) {
+  db.prepare(
+    `INSERT INTO settings (key, value) VALUES (?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+  ).run(key, value);
+}
+
 // --- Avatars ---
 
 // 4 familles de teintes (vert/sarcelle, bleu, violet, rose), 4 variantes claires/foncées
@@ -90,7 +109,6 @@ function pickNextAvatarColor() {
   const usedSet = new Set(used);
   const firstUnused = AVATAR_COLOR_PALETTE.find((c) => !usedSet.has(c));
   if (firstUnused) return firstUnused;
-  // Palette épuisée : on cycle en reprenant la couleur la moins récemment utilisée
   return AVATAR_COLOR_PALETTE[used.length % AVATAR_COLOR_PALETTE.length];
 }
 
@@ -146,12 +164,10 @@ function renameParticipant(id, name) {
   return { ok: true };
 }
 
-// Choisir une couleur retire automatiquement la photo (les deux modes sont exclusifs).
 function setParticipantAvatarColor(id, color) {
   db.prepare("UPDATE participants SET avatar_color = ?, avatar_image = NULL WHERE id = ?").run(color, id);
 }
 
-// image = data URL base64 (déjà recadrée/compressée côté client), ou null pour la retirer.
 function setParticipantAvatarImage(id, image) {
   db.prepare("UPDATE participants SET avatar_image = ? WHERE id = ?").run(image, id);
 }
@@ -237,7 +253,6 @@ function deleteAssignment(date) {
   return { ok: true };
 }
 
-// Assigne aléatoirement les participants sans date à des jours futurs disponibles.
 function autoAssignUnassigned(daysAhead = 120) {
   const unassigned = listUnassignedParticipants();
   if (unassigned.length === 0) return { assigned: [] };
@@ -520,6 +535,8 @@ function resetDatabase() {
 
 module.exports = {
   todayStr,
+  getSetting,
+  setSetting,
   listParticipants,
   getParticipant,
   addParticipant,

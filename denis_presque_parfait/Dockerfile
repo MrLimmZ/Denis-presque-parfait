@@ -1,9 +1,14 @@
-FROM --platform=linux/arm64 node:20-bookworm-slim
+FROM node:20-alpine
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache \
+    python3 make g++ \
+    chromium ffmpeg \
+    ca-certificates ttf-freefont nss freetype harfbuzz
+
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
 COPY server/package.json ./
 RUN npm install --omit=dev

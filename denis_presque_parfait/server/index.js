@@ -3,12 +3,12 @@ const http = require("http");
 const express = require("express");
 const { WebSocketServer } = require("ws");
 const db = require("./db");
+const ha = require("./ha");
+const { recordResultsVideo } = require("./videoRecorder");
 
 const PORT = process.env.PORT || 8080;
 
 const app = express();
-// Les avatars-photo passent en base64 dans les messages WS : on relève un peu la
-// limite par défaut d'express (inutilisée ici pour le WS, mais gardée cohérente).
 app.use(express.json({ limit: "5mb" }));
 
 if (process.env.NODE_ENV !== "production") {
@@ -24,7 +24,6 @@ if (process.env.NODE_ENV !== "production") {
 app.use(express.static(path.join(__dirname, "public")));
 
 const server = http.createServer(app);
-// Autorise des frames WS un peu plus grandes que le défaut, pour les images d'avatar en base64.
 const wss = new WebSocketServer({ server, path: "/ws", maxPayload: 5 * 1024 * 1024 });
 
 function broadcast(data) {
@@ -51,10 +50,17 @@ function broadcastSetupStatus() {
   broadcast({ type: "setup:status", status: db.getSetupStatus() });
 }
 
+let wasGameComplete = false;
+
 function checkAndBroadcastGameStatus() {
   const status = db.computeGameStatus();
-  if (status.complete) {
+
+  if (status.complete && !wasGameComplete) {
+    wasGameComplete = true;
     broadcast({ type: "game:complete", results: db.getResults() });
+    recordResultsVideo({ port: PORT }).catch((err) => console.error("[VIDEO] Erreur:", err));
+  } else if (!status.complete) {
+    wasGameComplete = false;
   }
 }
 
@@ -310,11 +316,66 @@ function handleMessage(ws, msg) {
   // --- Reset total de la base ---
   if (msg.type === "db:reset") {
     db.resetDatabase();
+    wasGameComplete = false;
     broadcastParticipants();
     broadcastCriteria();
     broadcastVotes();
     broadcastSetupStatus();
     broadcast({ type: "db:reset:done" });
+  }
+
+  // --- Intégration Home Assistant : diffusion des résultats sur une TV ---
+  if (msg.type === "ha:list_media_players") {
+    ha.listMediaPlayers()
+      .then((players) => ws.send(JSON.stringify({ type: "ha:media_players", players })))
+      .catch((err) =>
+        ws.send(JSON.stringify({ type: "ha:error", message: "Impossible de récupérer les appareils HA : " + err.message }))
+      );
+  }
+
+  if (msg.type === "ha:get_tv_config") {
+    ws.send(
+      JSON.stringify({
+        type: "ha:tv_config",
+        entity_id: db.getSetting("tv_entity_id") || "",
+        base_url: db.getSetting("tv_base_url") || "",
+      })
+    );
+  }
+
+  if (msg.type === "ha:save_tv_config") {
+    if (typeof msg.entity_id === "string") db.setSetting("tv_entity_id", msg.entity_id);
+    if (typeof msg.base_url === "string") db.setSetting("tv_base_url", msg.base_url.replace(/\/$/, ""));
+    broadcast({
+      type: "ha:tv_config",
+      entity_id: db.getSetting("tv_entity_id") || "",
+      base_url: db.getSetting("tv_base_url") || "",
+    });
+  }
+
+  if (msg.type === "video:generate_test") {
+    ws.send(JSON.stringify({ type: "video:generating" }));
+    recordResultsVideo({ port: PORT })
+      .then((filePath) => {
+        broadcast({ type: "video:generated", ok: !!filePath, url: "/videos/results-latest.mp4?t=" + Date.now() });
+      })
+      .catch((err) => {
+        broadcast({ type: "video:generated", ok: false, error: err.message });
+      });
+  }
+
+  if (msg.type === "video:push_to_tv") {
+    const entityId = db.getSetting("tv_entity_id");
+    const baseUrl = db.getSetting("tv_base_url");
+    if (!entityId || !baseUrl) {
+      ws.send(JSON.stringify({ type: "ha:error", message: "Choisis un appareil et renseigne l'URL de base d'abord." }));
+    } else {
+      const videoUrl = `${baseUrl}/videos/results-latest.mp4`;
+      ha.turnOn(entityId)
+        .then(() => ha.playMedia(entityId, videoUrl))
+        .then(() => ws.send(JSON.stringify({ type: "video:pushed" })))
+        .catch((err) => ws.send(JSON.stringify({ type: "ha:error", message: "Échec de la diffusion : " + err.message })));
+    }
   }
 }
 

@@ -77,6 +77,37 @@
           <div class="calendar" id="assignment-calendar-dashboard"></div>
         </div>
       </div>
+
+      <section class="tv-cast-section">
+        <span class="label">Diffusion TV (Apple TV)</span>
+        <p class="hint">
+          Choisis l'appareil, génère un aperçu de la vidéo des résultats, puis teste la diffusion réelle.
+        </p>
+
+        <div class="tv-cast-row">
+          <select id="tv-player-select" class="tv-player-select">
+            <option value="">Choisir un appareil...</option>
+          </select>
+        </div>
+
+        <div class="tv-cast-row">
+          <input
+            id="tv-base-url-input"
+            type="text"
+            placeholder="http://192.168.1.50:8080 (URL joignable par la TV)"
+          />
+          <button id="tv-save-config-btn" class="btn btn-secondary btn-sm">Enregistrer</button>
+        </div>
+
+        <div class="tv-cast-row">
+          <button id="tv-generate-btn" class="btn btn-secondary btn-sm">Générer + prévisualiser</button>
+          <button id="tv-push-btn" class="btn btn-primary btn-sm" disabled>Tester sur la TV</button>
+        </div>
+
+        <div id="tv-video-preview-wrap" style="display: none;">
+          <video id="tv-video-preview" controls></video>
+        </div>
+      </section>
     </section>
   </main>
 
@@ -214,7 +245,6 @@
       });
     });
 
-    // --- Barre de navigation fixe du wizard (retour / suivant / terminer) ---
     const wizardFixedBarEl = document.getElementById("wizard-fixed-bar");
     const wizardBackBtn = document.getElementById("wizard-back-btn");
     const wizardNextBtn = document.getElementById("wizard-next-btn");
@@ -308,6 +338,86 @@
 
     ws.send(JSON.stringify({ type: "votes:list" }));
     ws.send(JSON.stringify({ type: "setup:status" }));
+
+    // --- Diffusion TV (Apple TV via Home Assistant) ---
+    const tvPlayerSelect = document.getElementById("tv-player-select");
+    const tvBaseUrlInput = document.getElementById("tv-base-url-input");
+    const tvGenerateBtn = document.getElementById("tv-generate-btn");
+    const tvPushBtn = document.getElementById("tv-push-btn");
+    const tvVideoPreviewWrap = document.getElementById("tv-video-preview-wrap");
+    const tvVideoPreview = document.getElementById("tv-video-preview");
+
+    let hasGeneratedVideo = false;
+
+    function updateTvPushButtonState() {
+      tvPushBtn.disabled = !hasGeneratedVideo || !tvPlayerSelect.value;
+    }
+
+    AppWS.on("ha:media_players", (data) => {
+      const previousValue = tvPlayerSelect.value;
+      tvPlayerSelect.innerHTML = `<option value="">Choisir un appareil...</option>`;
+      (data.players || []).forEach((p) => {
+        const opt = document.createElement("option");
+        opt.value = p.entity_id;
+        opt.textContent = p.name;
+        tvPlayerSelect.appendChild(opt);
+      });
+      if (previousValue) tvPlayerSelect.value = previousValue;
+      updateTvPushButtonState();
+    });
+
+    AppWS.on("ha:tv_config", (data) => {
+      if (data.entity_id) tvPlayerSelect.value = data.entity_id;
+      tvBaseUrlInput.value = data.base_url || "";
+      updateTvPushButtonState();
+    });
+
+    AppWS.on("ha:error", (data) => alert(data.message));
+
+    AppWS.on("video:generating", () => {
+      tvGenerateBtn.disabled = true;
+      tvGenerateBtn.textContent = "Génération en cours...";
+    });
+
+    AppWS.on("video:generated", (data) => {
+      tvGenerateBtn.disabled = false;
+      tvGenerateBtn.textContent = "Générer + prévisualiser";
+      if (data.ok) {
+        hasGeneratedVideo = true;
+        tvVideoPreviewWrap.style.display = "block";
+        tvVideoPreview.src = data.url;
+        tvVideoPreview.load();
+        tvVideoPreview.play().catch(() => {});
+      } else {
+        alert("Échec de la génération : " + (data.error || "raison inconnue"));
+      }
+      updateTvPushButtonState();
+    });
+
+    AppWS.on("video:pushed", () => alert("Vidéo envoyée vers la TV."));
+
+    tvPlayerSelect.addEventListener("change", updateTvPushButtonState);
+
+    document.getElementById("tv-save-config-btn").addEventListener("click", () => {
+      ws.send(
+        JSON.stringify({
+          type: "ha:save_tv_config",
+          entity_id: tvPlayerSelect.value,
+          base_url: tvBaseUrlInput.value.trim(),
+        })
+      );
+    });
+
+    tvGenerateBtn.addEventListener("click", () => {
+      ws.send(JSON.stringify({ type: "video:generate_test" }));
+    });
+
+    tvPushBtn.addEventListener("click", () => {
+      ws.send(JSON.stringify({ type: "video:push_to_tv" }));
+    });
+
+    ws.send(JSON.stringify({ type: "ha:list_media_players" }));
+    ws.send(JSON.stringify({ type: "ha:get_tv_config" }));
 
     document.getElementById("reset-db-btn").addEventListener("click", () => {
       const confirmation = prompt(
