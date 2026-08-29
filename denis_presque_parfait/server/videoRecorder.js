@@ -46,10 +46,6 @@ const RECORDER_CONFIG = {
 
 let isRecording = false;
 
-// Réécrit le MP4 brut (silencieux, moov atom en fin de fichier) en ajoutant une piste
-// audio silencieuse + le flag faststart — indispensable pour une lecture fiable via
-// AirPlay sur Apple TV (sans ça : erreur 500 sur /playback-info côté device).
-// Ne ré-encode PAS la vidéo (-c:v copy), donc quasi instantané.
 function postProcessForAirPlay(inputPath, outputPath) {
   return new Promise((resolve, reject) => {
     const ffmpegPath = resolveFfmpegPath();
@@ -59,7 +55,13 @@ function postProcessForAirPlay(inputPath, outputPath) {
       "-f", "lavfi",
       "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
       "-shortest",
-      "-c:v", "copy",
+      "-c:v", "libx264",
+      "-profile:v", "high",
+      "-level:v", "4.0",
+      "-pix_fmt", "yuv420p",
+      "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2", // force des dimensions paires (requis par yuv420p)
+      "-preset", "fast",
+      "-crf", "18",
       "-c:a", "aac",
       "-b:a", "128k",
       "-movflags", "+faststart",
