@@ -217,6 +217,7 @@ PageModules.register("game", {
     let assignmentLoaded = false;
     let alreadyVoted = null;
     let votersForToday = new Set();
+    let absentVotersForToday = new Set();
     let hasRevealed = false;
     let redirecting = false;
     let gameStatusKnown = false;
@@ -247,6 +248,10 @@ PageModules.register("game", {
       assignmentViewEl.style.display = "none";
     }
 
+    // La checklist "qui a voté" permet aussi de marquer un absent comme dispensé,
+    // en cliquant dessus, pour que la partie puisse se terminer sans son vote.
+    // Cette action est disponible pour tout le monde (pas seulement le cuisinier
+    // du jour) car il n'y a pas de page admin dédiée pour ça.
     function renderVotersChecklist() {
       if (!todaysAssignment || allParticipants.length === 0) return "";
       const expectedVoters = allParticipants.filter(
@@ -255,12 +260,18 @@ PageModules.register("game", {
       const items = expectedVoters
         .map((p) => {
           const voted = votersForToday.has(p.id);
+          const absent = absentVotersForToday.has(p.id);
+          const state = voted ? "voted" : absent ? "absent" : "pending";
+          const icon = voted ? "✓" : absent ? "×" : "";
+          const hint = voted ? "" : absent ? " (dispensé·e)" : "";
           return `
-            <div class="voters-checklist-item ${voted ? "voted" : "pending"}">
+            <button type="button" class="voters-checklist-item ${state}" data-voter-id="${p.id}" ${
+            voted ? "disabled" : ""
+          }>
               ${renderAvatarHTML(p, "xs")}
-              <span>${p.name}</span>
-              <span class="voters-checklist-icon">${voted ? "✓" : ""}</span>
-            </div>
+              <span>${p.name}${hint}</span>
+              <span class="voters-checklist-icon">${icon}</span>
+            </button>
           `;
         })
         .join("");
@@ -268,8 +279,34 @@ PageModules.register("game", {
         <div class="voters-checklist">
           <span class="label">Qui a voté</span>
           <div class="voters-checklist-list">${items}</div>
+          <p class="voters-checklist-hint">Clique sur une personne absente pour la dispenser de vote.</p>
         </div>
       `;
+    }
+
+    function attachVotersChecklistHandlers(rootEl) {
+      const buttons = rootEl.querySelectorAll(".voters-checklist-item[data-voter-id]");
+      buttons.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const voterId = Number(btn.dataset.voterId);
+          const isAbsent = absentVotersForToday.has(voterId);
+          if (isAbsent) {
+            AppWS.send({
+              type: "absences:unmark",
+              date: today,
+              voter_participant_id: voterId,
+              target_participant_id: todaysAssignment.participant_id,
+            });
+          } else {
+            AppWS.send({
+              type: "absences:mark",
+              date: today,
+              voter_participant_id: voterId,
+              target_participant_id: todaysAssignment.participant_id,
+            });
+          }
+        });
+      });
     }
 
     function renderThankYou() {
@@ -286,6 +323,7 @@ PageModules.register("game", {
           ${renderVotersChecklist()}
         </div>
       `;
+      attachVotersChecklistHandlers(contentEl);
       showCalendar();
       reveal();
     }
@@ -320,8 +358,10 @@ PageModules.register("game", {
             <span class="state-card-eyebrow">Aujourd'hui</span>
             <h2 class="state-card-title">C'est à toi de cuisiner</h2>
             <p class="state-card-subtitle">Prends ton temps, on a hâte de découvrir ton plat.</p>
+            ${renderVotersChecklist()}
           </div>
         `;
+        attachVotersChecklistHandlers(contentEl);
         showCalendar();
         reveal();
         return;
@@ -375,10 +415,17 @@ PageModules.register("game", {
       todaysAssignment = data.assignment;
       assignmentLoaded = true;
 
-      if (data.assignment && String(data.assignment.participant_id) !== String(myParticipantId)) {
-        AppWS.send({ type: "votes:has_voted_today", date: today, voter_participant_id: Number(myParticipantId) });
+      if (data.assignment) {
+        if (String(data.assignment.participant_id) !== String(myParticipantId)) {
+          AppWS.send({ type: "votes:has_voted_today", date: today, voter_participant_id: Number(myParticipantId) });
+        }
         AppWS.send({
           type: "votes:voters_for_date",
+          date: today,
+          target_participant_id: data.assignment.participant_id,
+        });
+        AppWS.send({
+          type: "absences:list_for_date_target",
           date: today,
           target_participant_id: data.assignment.participant_id,
         });
@@ -408,7 +455,26 @@ PageModules.register("game", {
       if (data.date !== today || !todaysAssignment || data.target_participant_id !== todaysAssignment.participant_id)
         return;
       votersForToday.add(data.voter_participant_id);
+      absentVotersForToday.delete(data.voter_participant_id);
       updateVotersChecklistIfVisible();
+      renderContent();
+    });
+
+    const offAbsencesListForDateTarget = AppWS.on("absences:list_for_date_target", (data) => {
+      if (data.date !== today || !todaysAssignment || data.target_participant_id !== todaysAssignment.participant_id)
+        return;
+      absentVotersForToday = new Set(data.voter_ids || []);
+      updateVotersChecklistIfVisible();
+      renderContent();
+    });
+
+    const offAbsencesUpdate = AppWS.on("absences:update", (data) => {
+      if (data.date !== today || !todaysAssignment || data.target_participant_id !== todaysAssignment.participant_id)
+        return;
+      if (data.absent) absentVotersForToday.add(data.voter_participant_id);
+      else absentVotersForToday.delete(data.voter_participant_id);
+      updateVotersChecklistIfVisible();
+      renderContent();
     });
 
     const calendar = createCalendar({
@@ -479,6 +545,8 @@ PageModules.register("game", {
       offVotesSubmitted,
       offVotersForDate,
       offVoterUpdate,
+      offAbsencesListForDateTarget,
+      offAbsencesUpdate,
       offAssignmentsList,
       offAssignmentUpdate,
       offGameStatus,

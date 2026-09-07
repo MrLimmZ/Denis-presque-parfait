@@ -78,6 +78,16 @@ function broadcastAssignmentUpdateFor(date, participantId, hasVotes) {
   });
 }
 
+function broadcastAbsenceUpdateFor(date, targetParticipantId, voterParticipantId, absent) {
+  broadcast({
+    type: "absences:update",
+    date,
+    target_participant_id: targetParticipantId,
+    voter_participant_id: voterParticipantId,
+    absent: !!absent,
+  });
+}
+
 wss.on("connection", (ws) => {
   ws.send(JSON.stringify({ type: "participants", list: db.listParticipants() }));
   ws.send(JSON.stringify({ type: "participants:unassigned", list: db.listUnassignedParticipants() }));
@@ -260,6 +270,10 @@ function handleMessage(ws, msg) {
       voter_participant_id: msg.voter_participant_id,
     });
 
+    // La personne a voté : elle n'est plus "absente" pour ce jour/cible (géré aussi
+    // côté db.submitVotes, mais on informe les clients connectés du changement d'état).
+    broadcastAbsenceUpdateFor(msg.date, msg.target_participant_id, msg.voter_participant_id, false);
+
     checkAndBroadcastGameStatus();
   }
 
@@ -283,6 +297,46 @@ function handleMessage(ws, msg) {
         date: msg.date,
         target_participant_id: msg.target_participant_id,
         voter_ids: db.listVotersForDateTarget(msg.date, msg.target_participant_id),
+      })
+    );
+  }
+
+  // --- Absences ---
+  // Permet d'exempter un votant absent un jour donné, pour que la partie
+  // puisse tout de même être déclarée terminée sans son vote.
+  if (
+    msg.type === "absences:mark" &&
+    typeof msg.date === "string" &&
+    msg.voter_participant_id &&
+    msg.target_participant_id
+  ) {
+    const result = db.markAbsent(msg.date, msg.voter_participant_id, msg.target_participant_id);
+    if (!result.ok) {
+      ws.send(JSON.stringify({ type: "absences:error", message: result.error }));
+    } else {
+      broadcastAbsenceUpdateFor(msg.date, msg.target_participant_id, msg.voter_participant_id, true);
+      checkAndBroadcastGameStatus();
+    }
+  }
+
+  if (
+    msg.type === "absences:unmark" &&
+    typeof msg.date === "string" &&
+    msg.voter_participant_id &&
+    msg.target_participant_id
+  ) {
+    db.unmarkAbsent(msg.date, msg.voter_participant_id, msg.target_participant_id);
+    broadcastAbsenceUpdateFor(msg.date, msg.target_participant_id, msg.voter_participant_id, false);
+    checkAndBroadcastGameStatus();
+  }
+
+  if (msg.type === "absences:list_for_date_target" && typeof msg.date === "string" && msg.target_participant_id) {
+    ws.send(
+      JSON.stringify({
+        type: "absences:list_for_date_target",
+        date: msg.date,
+        target_participant_id: msg.target_participant_id,
+        voter_ids: db.listAbsentVoterIdsForDateTarget(msg.date, msg.target_participant_id),
       })
     );
   }

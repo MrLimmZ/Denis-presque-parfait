@@ -43,6 +43,14 @@ db.exec(`
     key TEXT PRIMARY KEY,
     value TEXT
   );
+
+  CREATE TABLE IF NOT EXISTS absences (
+    date TEXT NOT NULL,
+    voter_participant_id INTEGER NOT NULL,
+    target_participant_id INTEGER NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (date, voter_participant_id, target_participant_id)
+  );
 `);
 
 // --- Migrations légères (colonnes ajoutées après coup, rétrocompatibles) ---
@@ -377,6 +385,10 @@ function submitVotes(date, voterParticipantId, targetParticipantId, scores) {
         score: item.score,
       });
     });
+    // Si la personne vote finalement, elle n'est plus "absente" pour ce jour/cible.
+    db.prepare(
+      "DELETE FROM absences WHERE date = ? AND voter_participant_id = ? AND target_participant_id = ?"
+    ).run(date, voterParticipantId, targetParticipantId);
   });
   tx(scores);
 }
@@ -413,6 +425,40 @@ function listVotes() {
     .all();
 }
 
+// --- Absences ---
+// Permet de dispenser un votant d'un jour de notation précis (ex: absent ce jour-là)
+// afin que la partie puisse quand même être considérée comme terminée.
+
+function markAbsent(date, voterParticipantId, targetParticipantId) {
+  // On ne peut pas exempter quelqu'un qui a déjà voté (pas de sens), ni la
+  // personne notée elle-même de son propre jour.
+  if (String(voterParticipantId) === String(targetParticipantId)) {
+    return { ok: false, error: "Un participant ne peut pas être exempté de voter pour lui-même (il ne vote de toute façon pas pour lui-même)." };
+  }
+  db.prepare(
+    `INSERT INTO absences (date, voter_participant_id, target_participant_id)
+     VALUES (?, ?, ?)
+     ON CONFLICT(date, voter_participant_id, target_participant_id) DO NOTHING`
+  ).run(date, voterParticipantId, targetParticipantId);
+  return { ok: true };
+}
+
+function unmarkAbsent(date, voterParticipantId, targetParticipantId) {
+  db.prepare(
+    "DELETE FROM absences WHERE date = ? AND voter_participant_id = ? AND target_participant_id = ?"
+  ).run(date, voterParticipantId, targetParticipantId);
+  return { ok: true };
+}
+
+function listAbsentVoterIdsForDateTarget(date, targetParticipantId) {
+  return db
+    .prepare(
+      "SELECT voter_participant_id AS id FROM absences WHERE date = ? AND target_participant_id = ?"
+    )
+    .all(date, targetParticipantId)
+    .map((r) => r.id);
+}
+
 // --- Statut de configuration (wizard admin) ---
 
 function getSetupStatus() {
@@ -440,7 +486,10 @@ function computeGameStatus() {
 
   for (const p of participants) {
     const date = assignmentByParticipant[p.id];
-    const expectedVoterIds = participants.filter((x) => x.id !== p.id).map((x) => x.id);
+    const absentIds = new Set(listAbsentVoterIdsForDateTarget(date, p.id));
+    const expectedVoterIds = participants
+      .filter((x) => x.id !== p.id && !absentIds.has(x.id))
+      .map((x) => x.id);
     const actualVoterIds = listVotersForDateTarget(date, p.id);
     const missing = expectedVoterIds.filter((id) => !actualVoterIds.includes(id));
     if (missing.length > 0) return { complete: false };
@@ -521,6 +570,7 @@ function resetDatabase() {
       DELETE FROM assignments;
       DELETE FROM criteria;
       DELETE FROM participants;
+      DELETE FROM absences;
     `);
 
     const seqTableExists = db
@@ -560,6 +610,9 @@ module.exports = {
   hasVotedToday,
   listVotersForDateTarget,
   listVotes,
+  markAbsent,
+  unmarkAbsent,
+  listAbsentVoterIdsForDateTarget,
   getSetupStatus,
   computeGameStatus,
   getResults,
