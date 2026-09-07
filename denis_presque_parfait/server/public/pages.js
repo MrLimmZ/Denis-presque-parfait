@@ -743,6 +743,8 @@ PageModules.register("results", {
           rotate: () => gsap.utils.random(-8, 8),
         });
 
+        tl.addLabel("rankingReveal", "+=0.1");
+
         tl.to(
           rankingItems,
           {
@@ -753,13 +755,26 @@ PageModules.register("results", {
             duration: 0.5,
             ease: "back.out(2.4)",
             stagger: 0.07,
-            onStart: function () {
-              const scoreEl = this.targets()[0].querySelector(".ranking-score");
+          },
+          "rankingReveal"
+        );
+
+        // Le compteur de chaque ligne est déclenché explicitement (tl.call), avec
+        // le même décalage que le stagger visuel ci-dessus. On évite de compter sur
+        // le callback onStart d'une cible individuelle au sein d'un tween à
+        // plusieurs cibles avec stagger : ça ne se déclenche pas de façon fiable
+        // pour chaque élément (seule la 1ère ligne s'animait, les suivantes
+        // restaient bloquées sur "0.0" malgré une donnée correcte).
+        rankingItems.forEach((item, i) => {
+          tl.call(
+            () => {
+              const scoreEl = item.querySelector(".ranking-score");
               if (scoreEl) animateCountUp(scoreEl, Number(scoreEl.dataset.final), 0.5);
             },
-          },
-          "+=0.1"
-        );
+            null,
+            `rankingReveal+=${i * 0.07}`
+          );
+        });
       }
     }
 
