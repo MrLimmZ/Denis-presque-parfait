@@ -717,22 +717,31 @@ PageModules.register("results", {
         block.className = `podium-block podium-rank-${tierIndex + 1}${isMulti ? " podium-block-tied" : ""}`;
         block.dataset.rankIndex = tierIndex;
 
-        const peopleHtml = group.items
-          .map(
-            (r) => `
-              <div class="podium-person">
-                ${renderAvatarHTML(r, isMulti ? "md" : "lg")}
-                <span class="podium-name">${r.participant_name}</span>
-                <span class="podium-score" data-final="${r.overall_average_out_of_10}">0.0</span>
-              </div>
-            `
-          )
-          .join("");
+        let peopleHtml;
+        if (isMulti) {
+          // Ex æquo : pas de nom individuel (ça déborderait de la colonne), juste
+          // les avatars en pile, légèrement superposés les uns sur les autres.
+          const avatarsHtml = group.items
+            .map((r) => `<div class="podium-avatar-stack-item">${renderAvatarHTML(r, "md")}</div>`)
+            .join("");
+          peopleHtml = `<div class="podium-avatar-stack">${avatarsHtml}</div>`;
+        } else {
+          const r = group.items[0];
+          peopleHtml = `
+            ${renderAvatarHTML(r, "lg")}
+            <span class="podium-name">${r.participant_name}</span>
+          `;
+        }
+
+        // La moyenne est la même pour tout le palier (c'est la définition même de
+        // l'ex æquo) : un seul chiffre affiché, partagé par tout le groupe.
+        const sharedScore = group.items[0].overall_average_out_of_10;
 
         block.innerHTML = `
           <span class="podium-rank-badge">${group.rank}</span>
-          <div class="podium-people${isMulti ? " podium-people-multi" : ""}">${peopleHtml}</div>
+          ${peopleHtml}
           ${group.tied ? `<span class="podium-tie-label">Ex æquo</span>` : ""}
+          <span class="podium-score" data-final="${sharedScore}">0.0</span>
         `;
         podiumEl.appendChild(block);
       });

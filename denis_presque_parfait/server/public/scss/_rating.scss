@@ -205,29 +205,23 @@ body.has-rating-bar .wrap-center {
 // RÉSULTATS — podium avec paliers extensibles (ex æquo)
 // ============================================================
 
-.podium-people {
+.podium-avatar-stack {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 4px;
-}
-
-.podium-people-multi {
-  flex-direction: row;
-  flex-wrap: wrap;
   justify-content: center;
-  gap: 10px;
-
-  .podium-person {
-    min-width: 64px;
-  }
+  flex-wrap: wrap;
+  row-gap: 6px;
 }
 
-.podium-person {
+.podium-avatar-stack-item {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
+  border-radius: 50%;
+  border: 2px solid var(--card);
+  margin-left: -14px;
+
+  &:first-child {
+    margin-left: 0;
+  }
 }
 
 .podium-block-tied {
