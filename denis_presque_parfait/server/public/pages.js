@@ -572,6 +572,51 @@ PageModules.register("results", {
     const resultsContentEl = container.querySelector("#results-content");
     const podiumEl = container.querySelector("#podium");
     const rankingListEl = container.querySelector("#ranking-list");
+    const downloadPdfBtn = container.querySelector("#download-pdf-btn");
+
+    // --- Téléchargement des résultats en PDF ---
+    // Capture le contenu affiché (podium + classement, y compris les détails déjà
+    // dépliés le cas échéant) via html2canvas, puis l'insère dans un PDF généré
+    // avec jsPDF et déclenche son téléchargement.
+    async function downloadResultsAsPdf() {
+      if (typeof html2canvas === "undefined" || typeof window.jspdf === "undefined") {
+        alert("Le générateur de PDF n'a pas pu se charger. Vérifie ta connexion et réessaie.");
+        return;
+      }
+
+      const originalLabel = downloadPdfBtn.textContent;
+      downloadPdfBtn.disabled = true;
+      downloadPdfBtn.textContent = "Génération du PDF...";
+
+      try {
+        const bgColor = getComputedStyle(document.body).backgroundColor || "#000000";
+        const canvas = await html2canvas(resultsContentEl, {
+          backgroundColor: bgColor,
+          scale: 2,
+          useCORS: true,
+        });
+
+        const imgData = canvas.toDataURL("image/png");
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF({
+          orientation: canvas.width > canvas.height ? "landscape" : "portrait",
+          unit: "px",
+          format: [canvas.width, canvas.height],
+        });
+        pdf.addImage(imgData, "PNG", 0, 0, canvas.width, canvas.height);
+        pdf.save("resultats-denis-presque-parfait.pdf");
+      } catch (err) {
+        console.error("[RESULTS] Erreur génération PDF:", err);
+        alert("Impossible de générer le PDF, réessaie.");
+      } finally {
+        downloadPdfBtn.disabled = false;
+        downloadPdfBtn.textContent = originalLabel;
+      }
+    }
+
+    if (downloadPdfBtn) {
+      downloadPdfBtn.addEventListener("click", downloadResultsAsPdf);
+    }
 
     let hasStartedCountdown = false;
     let openDetailEl = null;
@@ -637,23 +682,57 @@ PageModules.register("results", {
       return ranks.map((r) => ({ rank: r, tied: countByRank[r] > 1 }));
     }
 
+    // Regroupe les résultats déjà triés par palier de rang (1er, 2e, 3e...), peu
+    // importe combien de personnes partagent ce rang.
+    function groupByRank(results, ranks) {
+      const groups = [];
+      results.forEach((r, i) => {
+        const rankInfo = ranks[i];
+        const last = groups[groups.length - 1];
+        if (last && last.rank === rankInfo.rank) {
+          last.items.push(r);
+        } else {
+          groups.push({ rank: rankInfo.rank, tied: rankInfo.tied, items: [r] });
+        }
+      });
+      return groups;
+    }
+
     function renderPodium(results, ranks) {
-      const top3 = results.slice(0, 3);
-      const top3Ranks = ranks.slice(0, 3);
-      const order = [1, 0, 2].filter((i) => top3[i]);
+      // Les 3 premiers PALIERS distincts (pas les 3 premières personnes) : si 3
+      // personnes sont ex æquo à la 2e place, elles tiennent toutes dans la case
+      // "argent", qui s'élargit pour les accueillir.
+      const groups = groupByRank(results, ranks).slice(0, 3);
       podiumEl.innerHTML = "";
-      order.forEach((i) => {
-        const r = top3[i];
-        const rankInfo = top3Ranks[i];
+
+      // Position visuelle classique conservée : argent à gauche, or au centre,
+      // bronze à droite — même quand un palier compte plusieurs personnes.
+      const visualOrder = [1, 0, 2].filter((tierIndex) => groups[tierIndex]);
+
+      visualOrder.forEach((tierIndex) => {
+        const group = groups[tierIndex];
+        const isMulti = group.items.length > 1;
+
         const block = document.createElement("div");
-        block.className = `podium-block podium-rank-${i + 1}`;
-        block.dataset.rankIndex = i;
+        block.className = `podium-block podium-rank-${tierIndex + 1}${isMulti ? " podium-block-tied" : ""}`;
+        block.dataset.rankIndex = tierIndex;
+
+        const peopleHtml = group.items
+          .map(
+            (r) => `
+              <div class="podium-person">
+                ${renderAvatarHTML(r, isMulti ? "md" : "lg")}
+                <span class="podium-name">${r.participant_name}</span>
+                <span class="podium-score" data-final="${r.overall_average_out_of_10}">0.0</span>
+              </div>
+            `
+          )
+          .join("");
+
         block.innerHTML = `
-          <span class="podium-rank-badge">${rankInfo.rank}</span>
-          ${renderAvatarHTML(r, "lg")}
-          <span class="podium-name">${r.participant_name}</span>
-          ${rankInfo.tied ? `<span class="podium-tie-label">Ex æquo</span>` : ""}
-          <span class="podium-score" data-final="${r.overall_average_out_of_10}">0.0</span>
+          <span class="podium-rank-badge">${group.rank}</span>
+          <div class="podium-people${isMulti ? " podium-people-multi" : ""}">${peopleHtml}</div>
+          ${group.tied ? `<span class="podium-tie-label">Ex æquo</span>` : ""}
         `;
         podiumEl.appendChild(block);
       });
@@ -672,20 +751,20 @@ PageModules.register("results", {
 
       let html = `<table class="votes-table"><thead><tr><th>Critère</th>`;
       columns.forEach((col) => {
-        html += `<th class="${col.absent ? "voter-col-absent" : ""}">${col.name}</th>`;
+        html += `<th class="votes-table-score-col${col.absent ? " voter-col-absent" : ""}">${col.name}</th>`;
       });
-      html += `<th>Moyenne</th></tr></thead><tbody>`;
+      html += `<th class="votes-table-avg-col">Moyenne</th></tr></thead><tbody>`;
       result.criteria.forEach((c) => {
         html += `<tr><td>${c.label}</td>`;
         columns.forEach((col) => {
           if (col.absent) {
-            html += `<td class="voter-col-absent">Absent</td>`;
+            html += `<td class="votes-table-score-col voter-col-absent">Absent</td>`;
           } else {
             const vote = c.votes.find((v) => v.voter_name === col.name);
-            html += `<td>${vote ? `${vote.score}/${c.max_note}` : "—"}</td>`;
+            html += `<td class="votes-table-score-col">${vote ? `${vote.score}/${c.max_note}` : "—"}</td>`;
           }
         });
-        html += `<td><strong>${c.average}/${c.max_note}</strong></td></tr>`;
+        html += `<td class="votes-table-avg-col"><strong>${c.average}/${c.max_note}</strong></td></tr>`;
       });
       html += `</tbody></table>`;
 
@@ -759,8 +838,11 @@ PageModules.register("results", {
             duration: 0.55,
             ease: "back.out(2.2)",
             onStart: () => {
-              const scoreEl = block.querySelector(".podium-score");
-              animateCountUp(scoreEl, Number(scoreEl.dataset.final), 0.7);
+              // Un palier peut contenir plusieurs personnes ex æquo, donc plusieurs
+              // scores à animer en même temps.
+              block.querySelectorAll(".podium-score").forEach((scoreEl) => {
+                animateCountUp(scoreEl, Number(scoreEl.dataset.final), 0.7);
+              });
             },
           },
           i === 0 ? 0 : "+=0.15"
@@ -859,6 +941,10 @@ PageModules.register("results", {
 
     AppWS.send({ type: "game:status" });
 
-    return [offGameStatus];
+    const cleanupPdfBtn = () => {
+      if (downloadPdfBtn) downloadPdfBtn.removeEventListener("click", downloadResultsAsPdf);
+    };
+
+    return [offGameStatus, cleanupPdfBtn];
   },
 });

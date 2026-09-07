@@ -1558,6 +1558,63 @@ body.has-rating-bar .wrap-center {
   color: var(--text);
 }
 
+.ranking-tie-badge {
+  font-size: 0.7em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  margin-left: 6px;
+  vertical-align: middle;
+  opacity: 0.8;
+}
+
+.podium-people {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.podium-people-multi {
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+.podium-people-multi .podium-person {
+  min-width: 64px;
+}
+
+.podium-person {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.podium-block-tied {
+  min-width: 0;
+  max-width: none;
+}
+
+.podium-tie-label {
+  display: block;
+  font-size: 0.7em;
+  opacity: 0.7;
+  margin-top: 2px;
+}
+
+.results-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 28px;
+  margin-bottom: 12px;
+}
+
+.results-download-btn {
+  min-width: 240px;
+}
+
 .state-card {
   background: var(--card);
   border: 1px solid var(--border);
@@ -1647,52 +1704,57 @@ body.has-rating-bar .wrap-center {
   width: 100%;
 }
 
-.voters-checklist-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 10px;
+.votes-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
 }
-
-.voters-checklist-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  font-size: 0.85rem;
+.votes-table th,
+.votes-table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
 }
-.voters-checklist-item span:nth-child(2) {
-  flex: 1;
-}
-
-.voters-checklist-icon {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.7rem;
-  flex-shrink: 0;
-  background: var(--card);
-  border: 1px solid var(--border);
+.votes-table th {
   color: var(--muted);
+  text-transform: uppercase;
+  font-size: 0.65rem;
+  letter-spacing: 0.04em;
 }
 
-.voters-checklist-item.voted {
-  border-color: var(--accent);
-}
-.voters-checklist-item.voted .voters-checklist-icon {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-contrast);
+.votes-table-score-col {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 0.92em;
 }
 
-.voters-checklist-item.pending {
+th.votes-table-score-col {
+  color: var(--muted);
   opacity: 0.7;
+}
+
+.votes-table-avg-col {
+  color: var(--text);
+  font-weight: 700;
+  background: var(--card);
+  border-left: 1px solid var(--border);
+}
+
+th.votes-table-avg-col {
+  color: var(--accent);
+  opacity: 1;
+  font-weight: 700;
+}
+
+.votes-table-avg-col strong {
+  color: var(--accent);
+}
+
+.voter-col-absent {
+  color: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.03);
+  font-style: italic;
 }
 
 .results-intro {

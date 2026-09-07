@@ -1,6 +1,10 @@
+// ============================================================
+// NOTATION (slider de vote)
+// ============================================================
+
 .rating-flow {
   margin-top: 12px;
-  min-height: 240px; // évite un saut de hauteur pendant les transitions de carte
+  min-height: 240px;
   width: 100%;
 }
 
@@ -30,10 +34,7 @@
 .rating-slider-wrap {
   display: flex;
   flex-direction: column;
-  width: 100%; // ne jamais laisser le flex column "shrink-to-fit" ici, sinon le track hérite d'une largeur minuscule
-  // Padding latéral généreux : le curseur déborde de ~13-17px de chaque côté du track
-  // quand il est en position extrême (translate -50%) — sans cette marge, le
-  // overflow:hidden du conteneur parent (utilisé pour l'effet de swipe) le coupe.
+  width: 100%;
   padding: 8px 20px 4px;
 }
 
@@ -60,7 +61,7 @@
   height: 6px;
   background: var(--border);
   border-radius: 999px;
-  touch-action: none; // le drag gère lui-même le scroll horizontal, pas le navigateur
+  touch-action: none;
   cursor: pointer;
 }
 
@@ -98,7 +99,7 @@
   display: flex;
   justify-content: space-between;
   margin-top: 10px;
-  padding: 0 1px; // aligne le premier/dernier trait avec les bords réels du track
+  padding: 0 1px;
 }
 
 .rating-slider-stop {
@@ -186,7 +187,10 @@ body.has-rating-bar .wrap-center {
   color: var(--text);
 }
 
-/* Ex æquo */
+// ============================================================
+// RÉSULTATS — classement (ex æquo)
+// ============================================================
+
 .ranking-tie-badge {
   font-size: 0.7em;
   padding: 1px 6px;
@@ -197,9 +201,58 @@ body.has-rating-bar .wrap-center {
   opacity: 0.8;
 }
 
+// ============================================================
+// RÉSULTATS — podium avec paliers extensibles (ex æquo)
+// ============================================================
+
+.podium-people {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.podium-people-multi {
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+
+  .podium-person {
+    min-width: 64px;
+  }
+}
+
+.podium-person {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.podium-block-tied {
+  min-width: 0;
+  max-width: none;
+}
+
 .podium-tie-label {
   display: block;
   font-size: 0.7em;
   opacity: 0.7;
-  margin-top: -4px;
+  margin-top: 2px;
+}
+
+// ============================================================
+// RÉSULTATS — téléchargement PDF
+// ============================================================
+
+.results-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 28px;
+  margin-bottom: 12px;
+}
+
+.results-download-btn {
+  min-width: 240px;
 }
