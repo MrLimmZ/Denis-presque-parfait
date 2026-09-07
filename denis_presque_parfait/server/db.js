@@ -529,12 +529,11 @@ function getResults() {
     byParticipant[r.target_participant_id].push(r);
   });
 
-  const results = Object.entries(byParticipant).map(([targetId, voteRows]) => {
-    const participant = getParticipant(Number(targetId));
+  const allParticipants = listParticipants();
 
-    const weightedSum = voteRows.reduce((sum, r) => sum + (r.score / r.max_note) * r.coefficient, 0);
-    const weightTotal = voteRows.reduce((sum, r) => sum + r.coefficient, 0);
-    const overallRatio = weightTotal > 0 ? weightedSum / weightTotal : 0;
+  const results = Object.entries(byParticipant).map(([targetId, voteRows]) => {
+    const targetIdNum = Number(targetId);
+    const participant = getParticipant(targetIdNum);
 
     const byCriterion = {};
     voteRows.forEach((r) => {
@@ -557,14 +556,55 @@ function getResults() {
       average: Math.round((c.votes.reduce((a, b) => a + b.score, 0) / c.votes.length) * 10) / 10,
     }));
 
+    // Moyenne globale = moyenne DE CHAQUE CRITÈRE (une seule valeur par critère,
+    // ramenée sur 0-1), pondérée par son coefficient. On pondère par critère et non
+    // par vote individuel : sinon un critère noté par plus de votants pèserait
+    // artificiellement plus lourd qu'un critère noté par moins de monde (ce qui
+    // était l'ancien comportement, source d'incohérences).
+    let weightedSum = 0;
+    let weightTotal = 0;
+    criteriaBreakdown.forEach((c) => {
+      if (!c.max_note || c.max_note <= 0) return;
+      const criterionRatio = c.average / c.max_note;
+      weightedSum += criterionRatio * (c.coefficient || 0);
+      weightTotal += c.coefficient || 0;
+    });
+
+    let overallRatio;
+    if (weightTotal > 0) {
+      overallRatio = weightedSum / weightTotal;
+    } else if (criteriaBreakdown.length > 0) {
+      // Filet de sécurité : si tous les critères notés ont un coefficient nul (ou
+      // manquant), on retombe sur une moyenne simple non pondérée plutôt que
+      // d'afficher 0/10, qui serait trompeur alors que la personne a bien été notée.
+      console.warn(
+        `[RESULTS] Poids total nul pour le participant ${targetIdNum} malgré ${criteriaBreakdown.length} critère(s) noté(s) — utilisation d'une moyenne simple de secours.`
+      );
+      const simpleSum = criteriaBreakdown.reduce((s, c) => s + c.average / c.max_note, 0);
+      overallRatio = simpleSum / criteriaBreakdown.length;
+    } else {
+      overallRatio = 0;
+    }
+
+    // Votants attendus qui n'ont en fait jamais noté ce participant — absence
+    // manuellement dispensée, pardon automatique du lendemain, ou simple oubli.
+    // Calculé directement depuis les votes réellement enregistrés (pas depuis la
+    // table "absences", qui ne couvre que les dispenses explicites) pour rester
+    // exact même avec le pardon automatique des jours passés.
+    const actualVoterIds = new Set(voteRows.map((r) => r.voter_participant_id));
+    const missingVoters = allParticipants
+      .filter((p) => p.id !== targetIdNum && !actualVoterIds.has(p.id))
+      .map((p) => ({ id: p.id, name: p.name }));
+
     return {
-      participant_id: Number(targetId),
+      participant_id: targetIdNum,
       participant_name: participant ? participant.name : "?",
       avatar_icon: participant ? participant.avatar_icon : "👤",
       avatar_color: participant ? participant.avatar_color : "#02413B",
       avatar_image: participant ? participant.avatar_image : null,
       overall_average_out_of_10: Math.round(overallRatio * 100) / 10,
       criteria: criteriaBreakdown,
+      missing_voters: missingVoters,
     };
   });
 

@@ -652,6 +652,12 @@ PageModules.register("results", {
         html += `<td><strong>${c.average}/${c.max_note}</strong></td></tr>`;
       });
       html += `</tbody></table>`;
+
+      if (result.missing_voters && result.missing_voters.length > 0) {
+        const names = result.missing_voters.map((v) => v.name).join(", ");
+        html += `<p class="votes-table-note">N'a pas pu noter : ${names}</p>`;
+      }
+
       return html;
     }
 
@@ -664,10 +670,16 @@ PageModules.register("results", {
 
         const row = document.createElement("button");
         row.className = "ranking-row";
+        const missingCount = (r.missing_voters && r.missing_voters.length) || 0;
+        const missingBadge =
+          missingCount > 0
+            ? `<span class="ranking-missing-badge" title="${missingCount} votant(s) n'a/n'ont pas pu noter">⚠ ${missingCount}</span>`
+            : "";
         row.innerHTML = `
           <span class="ranking-position">${index + 1}</span>
           ${renderAvatarHTML(r, "sm")}
           <span class="ranking-name">${r.participant_name}</span>
+          ${missingBadge}
           <span class="ranking-score" data-final="${r.overall_average_out_of_10}">0.0</span>
         `;
 
