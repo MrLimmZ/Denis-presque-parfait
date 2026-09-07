@@ -51,3 +51,9 @@
 .voters-checklist-item.pending {
   opacity: 0.7;
 }
+
+.voter-col-absent {
+  color: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.03);
+  font-style: italic;
+}

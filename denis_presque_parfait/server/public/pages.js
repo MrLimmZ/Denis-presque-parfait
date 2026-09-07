@@ -619,19 +619,40 @@ PageModules.register("results", {
       });
     }
 
-    function renderPodium(results) {
+    // Calcule le rang "sportif" de chaque résultat (1, 2, 2, 4, ...) : deux scores
+    // identiques partagent le même rang, et le rang suivant saute en conséquence.
+    // Renvoie un tableau aligné sur `results`, avec pour chaque entrée son rang et
+    // si elle est effectivement à égalité avec au moins une autre personne.
+    function computeRanks(results) {
+      const ranks = [];
+      for (let i = 0; i < results.length; i++) {
+        if (i > 0 && results[i].overall_average_out_of_10 === results[i - 1].overall_average_out_of_10) {
+          ranks.push(ranks[i - 1]);
+        } else {
+          ranks.push(i + 1);
+        }
+      }
+      const countByRank = {};
+      ranks.forEach((r) => (countByRank[r] = (countByRank[r] || 0) + 1));
+      return ranks.map((r) => ({ rank: r, tied: countByRank[r] > 1 }));
+    }
+
+    function renderPodium(results, ranks) {
       const top3 = results.slice(0, 3);
+      const top3Ranks = ranks.slice(0, 3);
       const order = [1, 0, 2].filter((i) => top3[i]);
       podiumEl.innerHTML = "";
       order.forEach((i) => {
         const r = top3[i];
+        const rankInfo = top3Ranks[i];
         const block = document.createElement("div");
         block.className = `podium-block podium-rank-${i + 1}`;
         block.dataset.rankIndex = i;
         block.innerHTML = `
-          <span class="podium-rank-badge">${i + 1}</span>
+          <span class="podium-rank-badge">${rankInfo.rank}</span>
           ${renderAvatarHTML(r, "lg")}
           <span class="podium-name">${r.participant_name}</span>
+          ${rankInfo.tied ? `<span class="podium-tie-label">Ex æquo</span>` : ""}
           <span class="podium-score" data-final="${r.overall_average_out_of_10}">0.0</span>
         `;
         podiumEl.appendChild(block);
@@ -640,31 +661,42 @@ PageModules.register("results", {
 
     function buildDetailTable(result) {
       const voterNames = [...new Set(result.criteria.flatMap((c) => c.votes.map((v) => v.voter_name)))];
+      const missingNames = (result.missing_voters || []).map((v) => v.name);
+
+      // Colonnes des votants ayant réellement noté, suivies des colonnes des
+      // absents (grisées, avec "Absent" écrit dans chaque case).
+      const columns = [
+        ...voterNames.map((name) => ({ name, absent: false })),
+        ...missingNames.map((name) => ({ name, absent: true })),
+      ];
+
       let html = `<table class="votes-table"><thead><tr><th>Critère</th>`;
-      voterNames.forEach((name) => (html += `<th>${name}</th>`));
+      columns.forEach((col) => {
+        html += `<th class="${col.absent ? "voter-col-absent" : ""}">${col.name}</th>`;
+      });
       html += `<th>Moyenne</th></tr></thead><tbody>`;
       result.criteria.forEach((c) => {
         html += `<tr><td>${c.label}</td>`;
-        voterNames.forEach((name) => {
-          const vote = c.votes.find((v) => v.voter_name === name);
-          html += `<td>${vote ? `${vote.score}/${c.max_note}` : "—"}</td>`;
+        columns.forEach((col) => {
+          if (col.absent) {
+            html += `<td class="voter-col-absent">Absent</td>`;
+          } else {
+            const vote = c.votes.find((v) => v.voter_name === col.name);
+            html += `<td>${vote ? `${vote.score}/${c.max_note}` : "—"}</td>`;
+          }
         });
         html += `<td><strong>${c.average}/${c.max_note}</strong></td></tr>`;
       });
       html += `</tbody></table>`;
 
-      if (result.missing_voters && result.missing_voters.length > 0) {
-        const names = result.missing_voters.map((v) => v.name).join(", ");
-        html += `<p class="votes-table-note">N'a pas pu noter : ${names}</p>`;
-      }
-
       return html;
     }
 
-    function renderRankingList(results) {
+    function renderRankingList(results, ranks) {
       rankingListEl.innerHTML = "";
       openDetailEl = null;
       results.forEach((r, index) => {
+        const rankInfo = ranks[index];
         const item = document.createElement("div");
         item.className = "ranking-item";
 
@@ -675,10 +707,11 @@ PageModules.register("results", {
           missingCount > 0
             ? `<span class="ranking-missing-badge" title="${missingCount} votant(s) n'a/n'ont pas pu noter">⚠ ${missingCount}</span>`
             : "";
+        const tieBadge = rankInfo.tied ? `<span class="ranking-tie-badge">Ex æquo</span>` : "";
         row.innerHTML = `
-          <span class="ranking-position">${index + 1}</span>
+          <span class="ranking-position">${rankInfo.rank}</span>
           ${renderAvatarHTML(r, "sm")}
-          <span class="ranking-name">${r.participant_name}</span>
+          <span class="ranking-name">${r.participant_name}${tieBadge}</span>
           ${missingBadge}
           <span class="ranking-score" data-final="${r.overall_average_out_of_10}">0.0</span>
         `;
@@ -781,8 +814,9 @@ PageModules.register("results", {
     const autoMode = new URLSearchParams(location.search).get("auto") === "1";
 
     function showResults(results) {
-      renderPodium(results);
-      renderRankingList(results);
+      const ranks = computeRanks(results);
+      renderPodium(results, ranks);
+      renderRankingList(results, ranks);
 
       if (autoMode) {
         loaderEl.style.display = "none";
