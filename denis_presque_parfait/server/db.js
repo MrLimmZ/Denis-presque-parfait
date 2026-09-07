@@ -484,8 +484,19 @@ function computeGameStatus() {
     if (!assignmentByParticipant[p.id]) return { complete: false };
   }
 
+  const today = todayStr();
+
   for (const p of participants) {
     const date = assignmentByParticipant[p.id];
+
+    // Un jour déjà passé (avant aujourd'hui) ne bloque plus la partie même si
+    // certains votants n'ont jamais voté (absence, oubli, etc.) : une fois la
+    // journée terminée, ces votes manquants sont automatiquement "pardonnés"
+    // sans intervention manuelle. Seul le jour en cours (aujourd'hui) exige
+    // encore la participation complète, avec possibilité de dispense manuelle
+    // immédiate via absences:mark (utile si une absence est connue à l'avance).
+    if (date < today) continue;
+
     const absentIds = new Set(listAbsentVoterIdsForDateTarget(date, p.id));
     const expectedVoterIds = participants
       .filter((x) => x.id !== p.id && !absentIds.has(x.id))

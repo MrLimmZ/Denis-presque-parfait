@@ -438,4 +438,12 @@ function handleMessage(ws, msg) {
 
 server.listen(PORT, () => {
   console.log(`Denis Presque Parfait - serveur lancé sur le port ${PORT}`);
+
+  // Vérifie le statut de la partie au démarrage (utile si le serveur a redémarré
+  // alors que la partie était déjà terminée) puis toutes les 15 minutes, afin que
+  // le passage à minuit (qui "pardonne" automatiquement les votants manquants des
+  // jours passés, voir db.computeGameStatus) déclenche bien la fin de partie et la
+  // génération de la vidéo sans qu'aucun client n'ait besoin de se connecter.
+  checkAndBroadcastGameStatus();
+  setInterval(checkAndBroadcastGameStatus, 15 * 60 * 1000);
 });
