@@ -23,6 +23,12 @@ if (process.env.NODE_ENV !== "production") {
 
 app.use(express.static(path.join(__dirname, "public")));
 
+// Sert la version locale de jsPDF (installée via `npm install jspdf`) plutôt que
+// de dépendre d'un CDN externe, qui peut être inaccessible selon le réseau (ex:
+// instance Home Assistant sans accès internet direct depuis le LAN, ou bloqué par
+// une extension/proxy côté client).
+app.use("/vendor/jspdf", express.static(path.join(__dirname, "node_modules", "jspdf", "dist")));
+
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: "/ws", maxPayload: 5 * 1024 * 1024 });
 
