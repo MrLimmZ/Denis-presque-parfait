@@ -51,6 +51,15 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now')),
     PRIMARY KEY (date, voter_participant_id, target_participant_id)
   );
+
+  CREATE TABLE IF NOT EXISTS editions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    label TEXT,
+    archived_at TEXT DEFAULT (datetime('now')),
+    participants_json TEXT NOT NULL,
+    criteria_json TEXT NOT NULL,
+    results_json TEXT NOT NULL
+  );
 `);
 
 // --- Migrations légères (colonnes ajoutées après coup, rétrocompatibles) ---
@@ -612,6 +621,77 @@ function getResults() {
   return results;
 }
 
+// --- Éditions archivées ---
+// Permet de conserver le résultat complet d'une édition terminée (participants,
+// critères, classement détaillé) avant de remettre les tables actives à zéro pour
+// en démarrer une nouvelle. Les éditions archivées ne sont JAMAIS touchées par
+// resetDatabase() : elles vivent dans leur propre table, indépendante du jeu en
+// cours.
+
+function archiveCurrentEdition(label) {
+  const participants = listParticipants();
+  const criteria = listCriteria();
+  const results = getResults();
+
+  const result = db
+    .prepare(
+      `INSERT INTO editions (label, participants_json, criteria_json, results_json)
+       VALUES (?, ?, ?, ?)`
+    )
+    .run(
+      label && label.trim() ? label.trim() : null,
+      JSON.stringify(participants),
+      JSON.stringify(criteria),
+      JSON.stringify(results)
+    );
+
+  return getEditionById(result.lastInsertRowid);
+}
+
+function listEditions() {
+  const rows = db
+    .prepare("SELECT id, label, archived_at, results_json FROM editions ORDER BY archived_at DESC")
+    .all();
+
+  return rows.map((row) => {
+    let winnerName = null;
+    let winnerScore = null;
+    let participantCount = null;
+    try {
+      const results = JSON.parse(row.results_json);
+      participantCount = results.length;
+      if (results.length > 0) {
+        winnerName = results[0].participant_name;
+        winnerScore = results[0].overall_average_out_of_10;
+      }
+    } catch {
+      // JSON corrompu (ne devrait pas arriver) : on affiche quand même la ligne,
+      // juste sans résumé du gagnant.
+    }
+    return {
+      id: row.id,
+      label: row.label,
+      archived_at: row.archived_at,
+      winner_name: winnerName,
+      winner_score: winnerScore,
+      participant_count: participantCount,
+    };
+  });
+}
+
+function getEditionById(id) {
+  const row = db.prepare("SELECT * FROM editions WHERE id = ?").get(id);
+  if (!row) return null;
+  return {
+    id: row.id,
+    label: row.label,
+    archived_at: row.archived_at,
+    participants: JSON.parse(row.participants_json),
+    criteria: JSON.parse(row.criteria_json),
+    results: JSON.parse(row.results_json),
+  };
+}
+
 // --- Reset total ---
 
 function resetDatabase() {
@@ -664,6 +744,9 @@ module.exports = {
   markAbsent,
   unmarkAbsent,
   listAbsentVoterIdsForDateTarget,
+  archiveCurrentEdition,
+  listEditions,
+  getEditionById,
   getSetupStatus,
   computeGameStatus,
   getResults,

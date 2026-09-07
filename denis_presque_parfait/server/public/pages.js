@@ -618,6 +618,36 @@ PageModules.register("results", {
       downloadPdfBtn.addEventListener("click", downloadResultsAsPdf);
     }
 
+    // --- Sauvegarder l'édition et en commencer une nouvelle ---
+    const archiveBtn = container.querySelector("#archive-edition-btn");
+    const archiveBtnOriginalLabel = archiveBtn ? archiveBtn.textContent : "";
+
+    function archiveAndReset() {
+      const confirmed = window.confirm(
+        "Cette édition va être sauvegardée, puis tout sera remis à zéro pour en démarrer une nouvelle " +
+          "(participants, votes, calendrier, critères). Continuer ?"
+      );
+      if (!confirmed) return;
+
+      archiveBtn.disabled = true;
+      archiveBtn.textContent = "Sauvegarde en cours...";
+      AppWS.send({ type: "editions:archive_and_reset" });
+    }
+
+    if (archiveBtn) {
+      archiveBtn.addEventListener("click", archiveAndReset);
+    }
+
+    // En cas de succès, le serveur rediffuse "game:status" (complete: false), déjà
+    // géré plus bas par offGameStatus, qui redirige automatiquement vers l'accueil
+    // — pas besoin de code supplémentaire ici pour le chemin de succès.
+    const offEditionsError = AppWS.on("editions:error", (data) => {
+      if (!archiveBtn) return;
+      archiveBtn.disabled = false;
+      archiveBtn.textContent = archiveBtnOriginalLabel;
+      alert(data.message || "Impossible de sauvegarder cette édition.");
+    });
+
     let hasStartedCountdown = false;
     let openDetailEl = null;
 
@@ -952,8 +982,9 @@ PageModules.register("results", {
 
     const cleanupPdfBtn = () => {
       if (downloadPdfBtn) downloadPdfBtn.removeEventListener("click", downloadResultsAsPdf);
+      if (archiveBtn) archiveBtn.removeEventListener("click", archiveAndReset);
     };
 
-    return [offGameStatus, cleanupPdfBtn];
+    return [offGameStatus, offEditionsError, cleanupPdfBtn];
   },
 });

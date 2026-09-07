@@ -373,6 +373,39 @@ function handleMessage(ws, msg) {
     );
   }
 
+  // --- Éditions archivées ---
+  // Sauvegarde l'édition actuelle (doit être terminée) puis remet tout à zéro
+  // pour en démarrer une nouvelle, en une seule action atomique côté client.
+  if (msg.type === "editions:archive_and_reset") {
+    const status = db.computeGameStatus();
+    if (!status.complete) {
+      ws.send(JSON.stringify({ type: "editions:error", message: "La partie n'est pas encore terminée, impossible de l'archiver." }));
+    } else {
+      const edition = db.archiveCurrentEdition(typeof msg.label === "string" ? msg.label : "");
+      db.resetDatabase();
+      wasGameComplete = false;
+
+      broadcastParticipants();
+      broadcastCriteria();
+      broadcastVotes();
+      broadcastSetupStatus();
+      broadcast({ type: "editions:archived", edition });
+      broadcast({ type: "db:reset:done" });
+      // Diffuse explicitement le nouveau statut (forcément incomplet juste après
+      // un reset) : les pages résultats/jeu connectées se redirigent alors
+      // automatiquement vers l'accueil via leur écouteur "game:status" existant.
+      broadcast({ type: "game:status", complete: false, results: null });
+    }
+  }
+
+  if (msg.type === "editions:list") {
+    ws.send(JSON.stringify({ type: "editions:list", list: db.listEditions() }));
+  }
+
+  if (msg.type === "editions:get" && msg.id) {
+    ws.send(JSON.stringify({ type: "editions:get", id: msg.id, edition: db.getEditionById(msg.id) }));
+  }
+
   // --- Reset total de la base ---
   if (msg.type === "db:reset") {
     db.resetDatabase();
