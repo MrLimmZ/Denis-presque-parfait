@@ -32,9 +32,13 @@
   }
 
   // --- Logo aux couleurs de Noël (les couleurs de marque sont des attributs fill) ---
+  // Logo fixe en haut de page ET logo de l'écran de chargement (splash).
   .app-logo {
     top: 26px;
+  }
 
+  .app-logo,
+  .splash-logo {
     path[fill="#DE0076"] {
       fill: var(--xmas-red);
     }

@@ -2888,13 +2888,16 @@ body.has-home-decor::after {
 [data-theme=christmas] .app-logo {
   top: 26px;
 }
-[data-theme=christmas] .app-logo path[fill="#DE0076"] {
+[data-theme=christmas] .app-logo path[fill="#DE0076"],
+[data-theme=christmas] .splash-logo path[fill="#DE0076"] {
   fill: var(--xmas-red);
 }
-[data-theme=christmas] .app-logo path[fill="#2A9CD1"] {
+[data-theme=christmas] .app-logo path[fill="#2A9CD1"],
+[data-theme=christmas] .splash-logo path[fill="#2A9CD1"] {
   fill: var(--text);
 }
-[data-theme=christmas] .app-logo path[fill="#02413B"] {
+[data-theme=christmas] .app-logo path[fill="#02413B"],
+[data-theme=christmas] .splash-logo path[fill="#02413B"] {
   fill: var(--xmas-gold);
 }
 [data-theme=christmas] .btn-primary {
