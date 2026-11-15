@@ -19,6 +19,10 @@ rm -f "${CONFIG_FILE}.bak"
 
 echo "→ Version bump: ${CURRENT_VERSION} → ${NEW_VERSION}"
 
+# --- 1b. Compile le SCSS (le Dockerfile ne le fait pas, style.css est servi tel quel) ---
+(cd denis_presque_parfait/server && npm run build:css)
+echo "→ CSS compilé."
+
 # --- 2. Commit + push ---
 git add -A
 git commit -m "Deploy v${NEW_VERSION}"

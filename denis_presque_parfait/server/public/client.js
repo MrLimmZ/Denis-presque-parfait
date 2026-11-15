@@ -61,12 +61,16 @@ const AppWS = (function () {
 
 function connectWS({
   onParticipants,
-  onUnassignedParticipants,
+  onUnassignedCooks,
+  onTeams,
+  onTeamsError,
+  onModeError,
+  onCalendarReload,
   onCriteria,
   onCriteriaError,
   onAssignmentsList,
   onAssignmentGet,
-  onAssignmentForParticipant,
+  onAssignmentForCook,
   onAssignmentUpdate,
   onAssignmentError,
   onAssignmentsRandomDone,
@@ -87,34 +91,27 @@ function connectWS({
   if (onOpen) AppWS.on("_open", onOpen);
   if (onClose) AppWS.on("_close", onClose);
   if (onParticipants) AppWS.on("participants", (d) => onParticipants(d.list));
-  if (onUnassignedParticipants) AppWS.on("participants:unassigned", (d) => onUnassignedParticipants(d.list));
+  if (onUnassignedCooks) AppWS.on("cooks:unassigned", (d) => onUnassignedCooks(d.list));
+  if (onTeams) AppWS.on("teams", (d) => onTeams(d.list));
+  if (onTeamsError) AppWS.on("teams:error", (d) => onTeamsError(d.message));
+  if (onModeError) AppWS.on("mode:error", (d) => onModeError(d.message));
+  if (onCalendarReload) AppWS.on("assignments:reload", onCalendarReload);
   if (onCriteria) AppWS.on("criteria", (d) => onCriteria(d.list));
   if (onCriteriaError) AppWS.on("criteria:error", (d) => onCriteriaError(d.message));
   if (onAssignmentsList) AppWS.on("assignments:list", (d) => onAssignmentsList(d.month, d.list));
   if (onAssignmentGet) AppWS.on("assignments:get", (d) => onAssignmentGet(d.date, d.assignment));
-  if (onAssignmentForParticipant)
-    AppWS.on("assignments:get_for_participant", (d) => onAssignmentForParticipant(d.participant_id, d.date));
+  if (onAssignmentForCook) AppWS.on("assignments:get_for_cook", (d) => onAssignmentForCook(d.cook_id, d.date));
   if (onAssignmentUpdate)
-    AppWS.on("assignments:update", (d) =>
-      onAssignmentUpdate(
-        d.date,
-        d.participant_id,
-        d.participant_name,
-        d.has_votes,
-        d.avatar_icon,
-        d.avatar_color,
-        d.avatar_image
-      )
-    );
+    AppWS.on("assignments:update", (d) => onAssignmentUpdate(d.date, d.assignment));
   if (onAssignmentError) AppWS.on("assignments:error", (d) => onAssignmentError(d.message));
   if (onAssignmentsRandomDone) AppWS.on("assignments:random:done", onAssignmentsRandomDone);
   if (onVotesList) AppWS.on("votes:list", (d) => onVotesList(d.list));
   if (onVotesSubmitted) AppWS.on("votes:submitted", onVotesSubmitted);
   if (onHasVotedToday) AppWS.on("votes:has_voted_today", (d) => onHasVotedToday(d.hasVoted));
   if (onVotersForDate)
-    AppWS.on("votes:voters_for_date", (d) => onVotersForDate(d.date, d.target_participant_id, d.voter_ids));
+    AppWS.on("votes:voters_for_date", (d) => onVotersForDate(d.date, d.target_id, d.voter_ids));
   if (onVoterUpdate)
-    AppWS.on("votes:voter_update", (d) => onVoterUpdate(d.date, d.target_participant_id, d.voter_participant_id));
+    AppWS.on("votes:voter_update", (d) => onVoterUpdate(d.date, d.target_id, d.voter_participant_id));
   if (onSetupStatus) AppWS.on("setup:status", (d) => onSetupStatus(d.status));
   if (onParticipantsError) AppWS.on("participants:error", (d) => onParticipantsError(d.message));
   if (onGameStatus) AppWS.on("game:status", (d) => onGameStatus(d.complete, d.results));
@@ -128,6 +125,14 @@ function connectWS({
       return WebSocket.OPEN;
     },
   };
+}
+
+// --- Échappement HTML (noms saisis par les joueurs injectés dans des templates) ---
+function escapeHtml(str) {
+  return String(str == null ? "" : str).replace(
+    /[&<>"']/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
+  );
 }
 
 // --- Cookies ---

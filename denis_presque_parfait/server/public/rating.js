@@ -152,7 +152,14 @@ function createRatingFlow({ container, criteria, onComplete }) {
 
     const stepLabel = document.createElement("p");
     stepLabel.className = "rating-step-label";
-    stepLabel.textContent = `Critère ${currentStep + 1} / ${criteria.length}`;
+    // Critères regroupés par catégorie (ex : "Plat", "Dessert") : on numérote à
+    // l'intérieur de la catégorie pour que chacun sache quel plat il note.
+    if (criterion.category) {
+      const sameCat = criteria.filter((c) => c.category === criterion.category);
+      stepLabel.textContent = `${criterion.category} · ${sameCat.indexOf(criterion) + 1} / ${sameCat.length}`;
+    } else {
+      stepLabel.textContent = `Critère ${currentStep + 1} / ${criteria.length}`;
+    }
     card.appendChild(stepLabel);
 
     const title = document.createElement("h2");

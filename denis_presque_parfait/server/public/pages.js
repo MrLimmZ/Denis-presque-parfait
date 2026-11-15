@@ -83,6 +83,7 @@ PageModules.register("home", {
         currentSetupStatus &&
         !currentSetupStatus.hasStarted &&
         (currentSetupStatus.participantsCount === 0 ||
+          currentSetupStatus.teamsReady === false ||
           currentSetupStatus.unassignedCount > 0 ||
           currentSetupStatus.criteriaCount === 0);
 
@@ -92,8 +93,12 @@ PageModules.register("home", {
         setupNoticeTextEl.textContent =
           currentSetupStatus.participantsCount === 0
             ? "Aucun participant n'a encore été ajouté."
+            : currentSetupStatus.teamsReady === false
+            ? "Les équipes ne sont pas encore formées."
             : currentSetupStatus.unassignedCount > 0
-            ? "Les participants n'ont pas encore tous une date."
+            ? currentSetupStatus.mode === "teams"
+              ? "Les équipes n'ont pas encore toutes une date."
+              : "Les participants n'ont pas encore tous une date."
             : "Les critères de notation ne sont pas encore définis.";
       } else {
         selectionEl.style.display = "block";
@@ -175,13 +180,19 @@ PageModules.register("home", {
       barba.go("results.html");
     });
 
+    const editionsLinkEl = container.querySelector("#home-editions-link");
+    const offEditionsList = AppWS.on("editions:list", (data) => {
+      if (editionsLinkEl) editionsLinkEl.style.display = data.list && data.list.length > 0 ? "inline-block" : "none";
+    });
+
     AppWS.send({ type: "participants:list" });
     AppWS.send({ type: "setup:status" });
     AppWS.send({ type: "game:status" });
+    AppWS.send({ type: "editions:list" });
 
     const cleanupDecor = () => document.body.classList.remove("has-home-decor");
 
-    return [offParticipants, offSetupStatus, offGameStatus, offGameComplete, cleanupDecor];
+    return [offParticipants, offSetupStatus, offGameStatus, offGameComplete, offEditionsList, cleanupDecor];
   },
 });
 
@@ -223,6 +234,15 @@ PageModules.register("game", {
     let gameStatusKnown = false;
     let activeRatingFlow = null;
 
+    // Phase bonus : une fois tous les repas notés, chacun donne un point bonus secret.
+    let phase = null; // "playing" | "bonus" | "done"
+    let bonusInfo = null; // { voted_count, expected_count, pending[], value }
+    let bonusCooks = [];
+    let myBonusTarget; // undefined = pas encore connu, null = pas encore voté
+    let bonusRequested = false;
+    let selectedBonusId = null;
+    let bonusEditing = false;
+
     function reveal() {
       if (redirecting || hasRevealed) return;
       if (!gameStatusKnown) return;
@@ -254,9 +274,10 @@ PageModules.register("game", {
     // du jour) car il n'y a pas de page admin dédiée pour ça.
     function renderVotersChecklist() {
       if (!todaysAssignment || allParticipants.length === 0) return "";
-      const expectedVoters = allParticipants.filter(
-        (p) => String(p.id) !== String(todaysAssignment.participant_id)
-      );
+      // Tout le monde vote, sauf les cuisiniers du jour (la personne en solo,
+      // toute l'équipe en mode équipes).
+      const cookMemberIds = new Set((todaysAssignment.members || []).map((m) => String(m.id)));
+      const expectedVoters = allParticipants.filter((p) => !cookMemberIds.has(String(p.id)));
       const items = expectedVoters
         .map((p) => {
           const voted = votersForToday.has(p.id);
@@ -290,21 +311,11 @@ PageModules.register("game", {
         btn.addEventListener("click", () => {
           const voterId = Number(btn.dataset.voterId);
           const isAbsent = absentVotersForToday.has(voterId);
-          if (isAbsent) {
-            AppWS.send({
-              type: "absences:unmark",
-              date: today,
-              voter_participant_id: voterId,
-              target_participant_id: todaysAssignment.participant_id,
-            });
-          } else {
-            AppWS.send({
-              type: "absences:mark",
-              date: today,
-              voter_participant_id: voterId,
-              target_participant_id: todaysAssignment.participant_id,
-            });
-          }
+          AppWS.send({
+            type: isAbsent ? "absences:unmark" : "absences:mark",
+            date: today,
+            voter_participant_id: voterId,
+          });
         });
       });
     }
@@ -332,12 +343,111 @@ PageModules.register("game", {
       if (alreadyVoted) renderThankYou();
     }
 
+    function formatPoints(value) {
+      return String(value).replace(".", ",");
+    }
+
+    function renderBonus() {
+      if (myBonusTarget === undefined || !bonusInfo) return;
+      hideCalendar();
+      const me = String(myParticipantId);
+      const progress = `
+        <div class="bonus-progress">
+          <span class="label">${bonusInfo.voted_count} / ${bonusInfo.expected_count} ont donné leur point</span>
+          ${
+            bonusInfo.pending.length
+              ? `<span class="hint">On attend : ${escapeHtml(bonusInfo.pending.map((p) => p.name).join(", "))}</span>`
+              : ""
+          }
+        </div>`;
+
+      if (myBonusTarget !== null && !bonusEditing) {
+        const chosen = bonusCooks.find((c) => c.cook_id === myBonusTarget);
+        contentEl.innerHTML = `
+          <div class="state-card">
+            <div class="state-card-icon bonus-star">★</div>
+            <span class="state-card-eyebrow">Point bonus</span>
+            <h2 class="state-card-title">Ton point bonus est donné</h2>
+            <p class="state-card-subtitle">
+              Tu l'as offert à <strong>${escapeHtml(chosen ? chosen.cook_name : "?")}</strong>.
+              Chut, c'est secret jusqu'à l'annonce des résultats !
+            </p>
+            ${progress}
+            <button type="button" class="btn btn-secondary btn-sm bonus-change-btn" id="bonus-change-btn">Changer mon choix</button>
+          </div>`;
+        contentEl.querySelector("#bonus-change-btn").addEventListener("click", () => {
+          bonusEditing = true;
+          selectedBonusId = myBonusTarget;
+          renderBonus();
+        });
+        reveal();
+        return;
+      }
+
+      const choices = bonusCooks.filter((c) => !(c.members || []).some((m) => String(m.id) === me));
+      const choicesHtml = choices
+        .map((c) => {
+          const avatars = c.kind === "team" ? c.members.map((m) => renderAvatarHTML(m, "sm")).join("") : renderAvatarHTML(c, "md");
+          const sub = c.kind === "team" ? `<span class="bonus-choice-members">${escapeHtml(c.members.map((m) => m.name).join(", "))}</span>` : "";
+          return `
+            <button type="button" class="bonus-choice${selectedBonusId === c.cook_id ? " selected" : ""}" data-cook-id="${c.cook_id}">
+              <span class="bonus-choice-avatars">${avatars}</span>
+              <span class="bonus-choice-text"><strong>${escapeHtml(c.cook_name)}</strong>${sub}</span>
+            </button>`;
+        })
+        .join("");
+
+      contentEl.innerHTML = `
+        <div class="state-card bonus-card">
+          <div class="state-card-icon bonus-star">★</div>
+          <span class="state-card-eyebrow">Dernière étape avant les résultats</span>
+          <h2 class="state-card-title">À qui donnes-tu ton point bonus ?</h2>
+          <p class="state-card-subtitle">
+            Ton coup de cœur de l'édition : +${formatPoints(bonusInfo.value)} point${bonusInfo.value > 1 ? "s" : ""} pour ${
+              bonusCooks[0] && bonusCooks[0].kind === "team" ? "l'équipe choisie" : "la personne choisie"
+            }. Ton choix reste secret jusqu'à l'annonce.
+          </p>
+          <div class="bonus-choices">${choicesHtml}</div>
+          <div class="bonus-actions">
+            ${bonusEditing ? `<button type="button" class="btn btn-secondary" id="bonus-cancel-btn">Annuler</button>` : ""}
+            <button type="button" class="btn btn-primary" id="bonus-confirm-btn" ${selectedBonusId === null ? "disabled" : ""}>
+              Donner mon point bonus
+            </button>
+          </div>
+          ${progress}
+        </div>`;
+
+      contentEl.querySelectorAll(".bonus-choice").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          selectedBonusId = Number(btn.dataset.cookId);
+          renderBonus();
+        });
+      });
+      const cancelBtn = contentEl.querySelector("#bonus-cancel-btn");
+      if (cancelBtn) {
+        cancelBtn.addEventListener("click", () => {
+          bonusEditing = false;
+          renderBonus();
+        });
+      }
+      contentEl.querySelector("#bonus-confirm-btn").addEventListener("click", () => {
+        if (selectedBonusId === null) return;
+        AppWS.send({ type: "bonus:submit", voter_participant_id: Number(myParticipantId), target_id: selectedBonusId });
+      });
+      reveal();
+    }
+
     function renderContent() {
       if (!assignmentLoaded || !criteriaLoaded) return;
 
       if (activeRatingFlow) {
         activeRatingFlow.destroy();
         activeRatingFlow = null;
+      }
+
+      if (phase === "bonus") {
+        renderBonus();
+        return;
       }
 
       if (!todaysAssignment) {
@@ -347,10 +457,28 @@ PageModules.register("game", {
         return;
       }
 
-      const isMyDay = String(todaysAssignment.participant_id) === String(myParticipantId);
+      const isTeamDay = todaysAssignment.kind === "team";
+      const isMyDay = (todaysAssignment.members || []).some((m) => String(m.id) === String(myParticipantId));
 
       if (isMyDay) {
-        contentEl.innerHTML = `
+        const teammates = (todaysAssignment.members || []).filter((m) => String(m.id) !== String(myParticipantId));
+        contentEl.innerHTML = isTeamDay
+          ? `
+          <div class="state-card">
+            <div class="state-card-icon team-avatar-stack">
+              ${(todaysAssignment.members || []).map((m) => renderAvatarHTML(m, "lg")).join("")}
+            </div>
+            <span class="state-card-eyebrow">Aujourd'hui · ${escapeHtml(todaysAssignment.cook_name)}</span>
+            <h2 class="state-card-title">C'est ton équipe qui cuisine</h2>
+            <p class="state-card-subtitle">${
+              teammates.length
+                ? `Avec ${escapeHtml(teammates.map((m) => m.name).join(", ").replace(/, ([^,]*)$/, " et $1"))}. On a hâte de goûter !`
+                : "On a hâte de goûter !"
+            }</p>
+            ${renderVotersChecklist()}
+          </div>
+        `
+          : `
           <div class="state-card">
             <div class="state-card-icon">
               ${renderAvatarHTML(todaysAssignment, "xl")}
@@ -377,6 +505,19 @@ PageModules.register("game", {
       hideCalendar();
       contentEl.innerHTML = "";
 
+      // Rappel de qui on note (surtout utile en équipes : on note un groupe).
+      const targetEl = document.createElement("div");
+      targetEl.className = "rating-target";
+      targetEl.innerHTML = `
+        <span class="rating-target-avatars">${(isTeamDay ? todaysAssignment.members : [todaysAssignment])
+          .map((m) => renderAvatarHTML(m, "sm"))
+          .join("")}</span>
+        <span>Tu notes <strong>${escapeHtml(todaysAssignment.cook_name)}</strong>${
+          isTeamDay ? ` <span class="rating-target-members">(${escapeHtml(todaysAssignment.members.map((m) => m.name).join(", "))})</span>` : ""
+        }</span>
+      `;
+      contentEl.appendChild(targetEl);
+
       const ratingContainer = document.createElement("div");
       ratingContainer.className = "rating-flow";
       contentEl.appendChild(ratingContainer);
@@ -390,7 +531,6 @@ PageModules.register("game", {
             type: "votes:submit",
             date: today,
             voter_participant_id: Number(myParticipantId),
-            target_participant_id: todaysAssignment.participant_id,
             scores,
           });
         },
@@ -416,19 +556,12 @@ PageModules.register("game", {
       assignmentLoaded = true;
 
       if (data.assignment) {
-        if (String(data.assignment.participant_id) !== String(myParticipantId)) {
+        const cooksToday = (data.assignment.members || []).some((m) => String(m.id) === String(myParticipantId));
+        if (!cooksToday) {
           AppWS.send({ type: "votes:has_voted_today", date: today, voter_participant_id: Number(myParticipantId) });
         }
-        AppWS.send({
-          type: "votes:voters_for_date",
-          date: today,
-          target_participant_id: data.assignment.participant_id,
-        });
-        AppWS.send({
-          type: "absences:list_for_date_target",
-          date: today,
-          target_participant_id: data.assignment.participant_id,
-        });
+        AppWS.send({ type: "votes:voters_for_date", date: today });
+        AppWS.send({ type: "absences:list_for_date", date: today });
       }
 
       renderContent();
@@ -445,14 +578,14 @@ PageModules.register("game", {
     });
 
     const offVotersForDate = AppWS.on("votes:voters_for_date", (data) => {
-      if (data.date !== today || !todaysAssignment || data.target_participant_id !== todaysAssignment.participant_id)
+      if (data.date !== today || !todaysAssignment || data.target_id !== todaysAssignment.cook_id)
         return;
       votersForToday = new Set(data.voter_ids || []);
       updateVotersChecklistIfVisible();
     });
 
     const offVoterUpdate = AppWS.on("votes:voter_update", (data) => {
-      if (data.date !== today || !todaysAssignment || data.target_participant_id !== todaysAssignment.participant_id)
+      if (data.date !== today || !todaysAssignment || data.target_id !== todaysAssignment.cook_id)
         return;
       votersForToday.add(data.voter_participant_id);
       absentVotersForToday.delete(data.voter_participant_id);
@@ -460,8 +593,8 @@ PageModules.register("game", {
       renderContent();
     });
 
-    const offAbsencesListForDateTarget = AppWS.on("absences:list_for_date_target", (data) => {
-      if (data.date !== today || !todaysAssignment || data.target_participant_id !== todaysAssignment.participant_id)
+    const offAbsencesListForDateTarget = AppWS.on("absences:list_for_date", (data) => {
+      if (data.date !== today || !todaysAssignment || data.target_id !== todaysAssignment.cook_id)
         return;
       absentVotersForToday = new Set(data.voter_ids || []);
       updateVotersChecklistIfVisible();
@@ -469,7 +602,7 @@ PageModules.register("game", {
     });
 
     const offAbsencesUpdate = AppWS.on("absences:update", (data) => {
-      if (data.date !== today || !todaysAssignment || data.target_participant_id !== todaysAssignment.participant_id)
+      if (data.date !== today || !todaysAssignment || data.target_id !== todaysAssignment.cook_id)
         return;
       if (data.absent) absentVotersForToday.add(data.voter_participant_id);
       else absentVotersForToday.delete(data.voter_participant_id);
@@ -489,28 +622,29 @@ PageModules.register("game", {
 
     const offAssignmentsList = AppWS.on("assignments:list", (data) => calendar.setAssignments(data.month, data.list));
     const offAssignmentUpdate = AppWS.on("assignments:update", (data) => {
-      calendar.applyUpdate(
-        data.date,
-        data.participant_id,
-        data.participant_name,
-        data.has_votes,
-        data.avatar_icon,
-        data.avatar_color,
-        data.avatar_image
-      );
-      if (data.date === today) {
-        todaysAssignment = data.participant_id
-          ? {
-              date: data.date,
-              participant_id: data.participant_id,
-              participant_name: data.participant_name,
-              has_votes: data.has_votes,
-              avatar_icon: data.avatar_icon,
-              avatar_color: data.avatar_color,
-              avatar_image: data.avatar_image,
-            }
-          : null;
+      calendar.applyUpdate(data.date, data.assignment);
+      // Le cuisinier du jour a changé (échange de dates côté admin) : on recharge
+      // tout l'état du jour (a voté ?, votants, absents) puis on réaffiche. On ne le
+      // fait PAS pour une simple mise à jour has_votes (à chaque vote soumis), sinon
+      // on détruirait le formulaire de notation en cours des autres votants.
+      const previousTodayId = todaysAssignment ? todaysAssignment.cook_id : null;
+      const newTodayId = data.assignment ? data.assignment.cook_id : null;
+      if (data.date === today && newTodayId !== previousTodayId) {
+        alreadyVoted = null;
+        votersForToday = new Set();
+        absentVotersForToday = new Set();
+        AppWS.send({ type: "assignments:get", date: today });
+        return;
       }
+      if (data.date === today) todaysAssignment = data.assignment;
+    });
+
+    // Calendrier entièrement modifié (mode, équipes...) : on recharge le mois et
+    // l'état du jour.
+    const offCalendarReload = AppWS.on("assignments:reload", () => {
+      AppWS.send({ type: "assignments:list", month: calendar.getCurrentMonthKey() });
+      alreadyVoted = null;
+      AppWS.send({ type: "assignments:get", date: today });
     });
 
     const offGameStatus = AppWS.on("game:status", (data) => {
@@ -524,6 +658,34 @@ PageModules.register("game", {
     });
 
     const offGameComplete = AppWS.on("game:complete", () => goToResults());
+
+    // Phase de la partie. ATTENTION : diffusée à chaque vote ; on ne réaffiche que
+    // si la phase change (ou en phase bonus), sinon on détruirait le formulaire de
+    // notation en cours des autres votants.
+    const offGamePhase = AppWS.on("game:phase", (data) => {
+      const changed = data.phase !== phase;
+      phase = data.phase;
+      if (phase === "bonus") {
+        bonusInfo = data.bonus;
+        bonusCooks = data.cooks || [];
+        if (!bonusRequested) {
+          bonusRequested = true;
+          AppWS.send({ type: "bonus:get_mine", voter_participant_id: Number(myParticipantId) });
+        }
+        renderContent();
+      } else if (changed) {
+        renderContent();
+      }
+    });
+
+    const offBonusMine = AppWS.on("bonus:mine", (data) => {
+      myBonusTarget = data.target_id;
+      bonusEditing = false;
+      selectedBonusId = null;
+      renderContent();
+    });
+
+    const offBonusError = AppWS.on("bonus:error", (data) => alert(data.message));
 
     AppWS.send({ type: "participants:list" });
     AppWS.send({ type: "criteria:list" });
@@ -549,8 +711,12 @@ PageModules.register("game", {
       offAbsencesUpdate,
       offAssignmentsList,
       offAssignmentUpdate,
+      offCalendarReload,
       offGameStatus,
       offGameComplete,
+      offGamePhase,
+      offBonusMine,
+      offBonusError,
       cleanupRatingBar,
     ];
   },
@@ -584,9 +750,10 @@ PageModules.register("results", {
         return;
       }
 
-      const originalLabel = downloadPdfBtn.textContent;
+      const pdfLabelEl = downloadPdfBtn.querySelector(".btn-label") || downloadPdfBtn;
+      const originalLabel = pdfLabelEl.textContent;
       downloadPdfBtn.disabled = true;
-      downloadPdfBtn.textContent = "Génération du PDF...";
+      pdfLabelEl.textContent = "Génération du PDF...";
 
       try {
         const bgColor = getComputedStyle(document.body).backgroundColor || "#000000";
@@ -610,7 +777,7 @@ PageModules.register("results", {
         alert("Impossible de générer le PDF, réessaie.");
       } finally {
         downloadPdfBtn.disabled = false;
-        downloadPdfBtn.textContent = originalLabel;
+        pdfLabelEl.textContent = originalLabel;
       }
     }
 
@@ -620,19 +787,46 @@ PageModules.register("results", {
 
     // --- Sauvegarder l'édition et en commencer une nouvelle ---
     const archiveBtn = container.querySelector("#archive-edition-btn");
-    const archiveBtnOriginalLabel = archiveBtn ? archiveBtn.textContent : "";
+    const archiveLabelEl = archiveBtn ? archiveBtn.querySelector(".btn-label") || archiveBtn : null;
+    const archiveBtnOriginalLabel = archiveLabelEl ? archiveLabelEl.textContent : "";
 
-    function archiveAndReset() {
-      const confirmed = window.confirm(
-        "Cette édition va être sauvegardée, puis tout sera remis à zéro pour en démarrer une nouvelle " +
-          "(participants, votes, calendrier, critères). Continuer ?"
-      );
-      if (!confirmed) return;
+    const archiveDialog = container.querySelector("#archive-dialog");
+    const archiveForm = container.querySelector("#archive-form");
+    const archiveLabelInput = container.querySelector("#archive-label-input");
+    const archiveKeepParticipantsInput = container.querySelector("#archive-keep-participants");
+    const archiveKeepCriteriaInput = container.querySelector("#archive-keep-criteria");
+    const archiveCancelBtn = container.querySelector("#archive-cancel-btn");
 
-      archiveBtn.disabled = true;
-      archiveBtn.textContent = "Sauvegarde en cours...";
-      AppWS.send({ type: "editions:archive_and_reset" });
+    function defaultEditionLabel() {
+      const monthYear = new Date().toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
+      return monthYear.charAt(0).toUpperCase() + monthYear.slice(1);
     }
+
+    // Ouvre la boîte de dialogue : nom de l'édition + choix de garder (ou non)
+    // participants et critères pour la suivante.
+    function archiveAndReset() {
+      if (!archiveDialog || typeof archiveDialog.showModal !== "function") return;
+      if (!archiveLabelInput.value) archiveLabelInput.value = defaultEditionLabel();
+      archiveDialog.showModal();
+      archiveLabelInput.select();
+    }
+
+    function submitArchive(event) {
+      event.preventDefault();
+      archiveDialog.close();
+      archiveBtn.disabled = true;
+      archiveLabelEl.textContent = "Sauvegarde en cours...";
+      AppWS.send({
+        type: "editions:archive_and_reset",
+        label: archiveLabelInput.value.trim(),
+        keep_participants: archiveKeepParticipantsInput.checked,
+        keep_criteria: archiveKeepCriteriaInput.checked,
+      });
+    }
+
+    const closeArchiveDialog = () => archiveDialog.close();
+    if (archiveForm) archiveForm.addEventListener("submit", submitArchive);
+    if (archiveCancelBtn) archiveCancelBtn.addEventListener("click", closeArchiveDialog);
 
     if (archiveBtn) {
       archiveBtn.addEventListener("click", archiveAndReset);
@@ -644,12 +838,11 @@ PageModules.register("results", {
     const offEditionsError = AppWS.on("editions:error", (data) => {
       if (!archiveBtn) return;
       archiveBtn.disabled = false;
-      archiveBtn.textContent = archiveBtnOriginalLabel;
+      archiveLabelEl.textContent = archiveBtnOriginalLabel;
       alert(data.message || "Impossible de sauvegarder cette édition.");
     });
 
     let hasStartedCountdown = false;
-    let openDetailEl = null;
 
     function runCountdown(onDone) {
       if (hasStartedCountdown) return;
@@ -694,163 +887,9 @@ PageModules.register("results", {
       });
     }
 
-    // Calcule le rang "sportif" de chaque résultat (1, 2, 2, 4, ...) : deux scores
-    // identiques partagent le même rang, et le rang suivant saute en conséquence.
-    // Renvoie un tableau aligné sur `results`, avec pour chaque entrée son rang et
-    // si elle est effectivement à égalité avec au moins une autre personne.
-    function computeRanks(results) {
-      const ranks = [];
-      for (let i = 0; i < results.length; i++) {
-        if (i > 0 && results[i].overall_average_out_of_10 === results[i - 1].overall_average_out_of_10) {
-          ranks.push(ranks[i - 1]);
-        } else {
-          ranks.push(i + 1);
-        }
-      }
-      const countByRank = {};
-      ranks.forEach((r) => (countByRank[r] = (countByRank[r] || 0) + 1));
-      return ranks.map((r) => ({ rank: r, tied: countByRank[r] > 1 }));
-    }
-
-    // Regroupe les résultats déjà triés par palier de rang (1er, 2e, 3e...), peu
-    // importe combien de personnes partagent ce rang.
-    function groupByRank(results, ranks) {
-      const groups = [];
-      results.forEach((r, i) => {
-        const rankInfo = ranks[i];
-        const last = groups[groups.length - 1];
-        if (last && last.rank === rankInfo.rank) {
-          last.items.push(r);
-        } else {
-          groups.push({ rank: rankInfo.rank, tied: rankInfo.tied, items: [r] });
-        }
-      });
-      return groups;
-    }
-
-    function renderPodium(results, ranks) {
-      // Les 3 premiers PALIERS distincts (pas les 3 premières personnes) : si 3
-      // personnes sont ex æquo à la 2e place, elles tiennent toutes dans la case
-      // "argent", qui s'élargit pour les accueillir.
-      const groups = groupByRank(results, ranks).slice(0, 3);
-      podiumEl.innerHTML = "";
-
-      // Position visuelle classique conservée : argent à gauche, or au centre,
-      // bronze à droite — même quand un palier compte plusieurs personnes.
-      const visualOrder = [1, 0, 2].filter((tierIndex) => groups[tierIndex]);
-
-      visualOrder.forEach((tierIndex) => {
-        const group = groups[tierIndex];
-        const isMulti = group.items.length > 1;
-
-        const block = document.createElement("div");
-        block.className = `podium-block podium-rank-${tierIndex + 1}${isMulti ? " podium-block-tied" : ""}`;
-        block.dataset.rankIndex = tierIndex;
-
-        let peopleHtml;
-        if (isMulti) {
-          // Ex æquo : pas de nom individuel (ça déborderait de la colonne), juste
-          // les avatars en pile, légèrement superposés les uns sur les autres.
-          const avatarsHtml = group.items
-            .map((r) => `<div class="podium-avatar-stack-item">${renderAvatarHTML(r, "md")}</div>`)
-            .join("");
-          peopleHtml = `<div class="podium-avatar-stack">${avatarsHtml}</div>`;
-        } else {
-          const r = group.items[0];
-          peopleHtml = `
-            ${renderAvatarHTML(r, "lg")}
-            <span class="podium-name">${r.participant_name}</span>
-          `;
-        }
-
-        // La moyenne est la même pour tout le palier (c'est la définition même de
-        // l'ex æquo) : un seul chiffre affiché, partagé par tout le groupe.
-        const sharedScore = group.items[0].overall_average_out_of_10;
-
-        block.innerHTML = `
-          <span class="podium-rank-badge">${group.rank}</span>
-          ${peopleHtml}
-          ${group.tied ? `<span class="podium-tie-label">Ex æquo</span>` : ""}
-          <span class="podium-score" data-final="${sharedScore}">0.0</span>
-        `;
-        podiumEl.appendChild(block);
-      });
-    }
-
-    function buildDetailTable(result) {
-      const voterNames = [...new Set(result.criteria.flatMap((c) => c.votes.map((v) => v.voter_name)))];
-      const missingNames = (result.missing_voters || []).map((v) => v.name);
-
-      // Colonnes des votants ayant réellement noté, suivies des colonnes des
-      // absents (grisées, avec "Absent" écrit dans chaque case).
-      const columns = [
-        ...voterNames.map((name) => ({ name, absent: false })),
-        ...missingNames.map((name) => ({ name, absent: true })),
-      ];
-
-      let html = `<table class="votes-table"><thead><tr><th>Critère</th>`;
-      columns.forEach((col) => {
-        html += `<th class="votes-table-score-col${col.absent ? " voter-col-absent" : ""}">${col.name}</th>`;
-      });
-      html += `<th class="votes-table-avg-col">Moyenne</th></tr></thead><tbody>`;
-      result.criteria.forEach((c) => {
-        html += `<tr><td>${c.label}</td>`;
-        columns.forEach((col) => {
-          if (col.absent) {
-            html += `<td class="votes-table-score-col voter-col-absent">Absent</td>`;
-          } else {
-            const vote = c.votes.find((v) => v.voter_name === col.name);
-            html += `<td class="votes-table-score-col">${vote ? `${vote.score}/${c.max_note}` : "—"}</td>`;
-          }
-        });
-        html += `<td class="votes-table-avg-col"><strong>${c.average}/${c.max_note}</strong></td></tr>`;
-      });
-      html += `</tbody></table>`;
-
-      return html;
-    }
-
-    function renderRankingList(results, ranks) {
-      rankingListEl.innerHTML = "";
-      openDetailEl = null;
-      results.forEach((r, index) => {
-        const rankInfo = ranks[index];
-        const item = document.createElement("div");
-        item.className = "ranking-item";
-
-        const row = document.createElement("button");
-        row.className = "ranking-row";
-        const missingCount = (r.missing_voters && r.missing_voters.length) || 0;
-        const missingBadge =
-          missingCount > 0
-            ? `<span class="ranking-missing-badge" title="${missingCount} votant(s) n'a/n'ont pas pu noter">⚠ ${missingCount}</span>`
-            : "";
-        const tieBadge = rankInfo.tied ? `<span class="ranking-tie-badge">Ex æquo</span>` : "";
-        row.innerHTML = `
-          <span class="ranking-position">${rankInfo.rank}</span>
-          ${renderAvatarHTML(r, "sm")}
-          <span class="ranking-name">${r.participant_name}${tieBadge}</span>
-          ${missingBadge}
-          <span class="ranking-score" data-final="${r.overall_average_out_of_10}">0.0</span>
-        `;
-
-        const detail = document.createElement("div");
-        detail.className = "ranking-detail";
-        detail.innerHTML = buildDetailTable(r);
-        detail.style.display = "none";
-
-        row.addEventListener("click", () => {
-          const isCurrentlyOpen = detail.style.display !== "none";
-          if (openDetailEl && openDetailEl !== detail) openDetailEl.style.display = "none";
-          detail.style.display = isCurrentlyOpen ? "none" : "block";
-          openDetailEl = isCurrentlyOpen ? null : detail;
-        });
-
-        item.appendChild(row);
-        item.appendChild(detail);
-        rankingListEl.appendChild(item);
-      });
-    }
+    const { computeRanks } = ResultsView;
+    const renderPodium = (results, ranks) => ResultsView.renderPodium(podiumEl, results, ranks);
+    const renderRankingList = (results, ranks) => ResultsView.renderRankingList(rankingListEl, results, ranks);
 
     function animateResultsReveal() {
       if (typeof gsap === "undefined") {
@@ -983,8 +1022,152 @@ PageModules.register("results", {
     const cleanupPdfBtn = () => {
       if (downloadPdfBtn) downloadPdfBtn.removeEventListener("click", downloadResultsAsPdf);
       if (archiveBtn) archiveBtn.removeEventListener("click", archiveAndReset);
+      if (archiveForm) archiveForm.removeEventListener("submit", submitArchive);
+      if (archiveCancelBtn) archiveCancelBtn.removeEventListener("click", closeArchiveDialog);
     };
 
     return [offGameStatus, offEditionsError, cleanupPdfBtn];
+  },
+});
+// ============================================================
+// EDITIONS (editions.html) — historique des éditions archivées
+// ============================================================
+PageModules.register("editions", {
+  mount(container) {
+    const loaderEl = document.getElementById("page-loader");
+    loaderEl.style.display = "flex";
+    const loadStart = Date.now();
+
+    const listViewEl = container.querySelector("#editions-list-view");
+    const listEl = container.querySelector("#editions-list");
+    const detailViewEl = container.querySelector("#edition-detail-view");
+    const detailDateEl = container.querySelector("#edition-detail-date");
+    const detailTitleEl = container.querySelector("#edition-detail-title");
+    const detailSubtitleEl = container.querySelector("#edition-detail-subtitle");
+    const podiumEl = container.querySelector("#edition-podium");
+    const rankingListEl = container.querySelector("#edition-ranking-list");
+    const backBtn = container.querySelector("#editions-back-btn");
+
+    let currentView = "list";
+    let hasRevealed = false;
+
+    // archived_at est stocké par SQLite en UTC ("YYYY-MM-DD HH:MM:SS").
+    function formatArchivedAt(archivedAt) {
+      if (!archivedAt) return "";
+      const d = new Date(archivedAt.replace(" ", "T") + "Z");
+      if (isNaN(d)) return archivedAt;
+      return d.toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
+    }
+
+    function editionTitle(edition) {
+      return edition.label || `Édition du ${formatArchivedAt(edition.archived_at)}`;
+    }
+
+    function reveal() {
+      if (hasRevealed) return;
+      hasRevealed = true;
+      withMinDelay(loadStart, 300, () => {
+        AppBoot.ready(() => {
+          loaderEl.style.display = "none";
+          container.classList.add("is-ready");
+        });
+      });
+    }
+
+    function showView(view) {
+      currentView = view;
+      listViewEl.style.display = view === "list" ? "block" : "none";
+      detailViewEl.style.display = view === "detail" ? "block" : "none";
+      window.scrollTo(0, 0);
+    }
+
+    function renderList(list) {
+      listEl.innerHTML = "";
+
+      if (!list || list.length === 0) {
+        listEl.innerHTML = `
+          <div class="state-card">
+            <span class="state-card-eyebrow">Rien pour l'instant</span>
+            <h2 class="state-card-title">Aucune édition archivée</h2>
+            <p class="state-card-subtitle">À la fin d'une partie, « Lancer une nouvelle édition » la sauvegarde ici.</p>
+          </div>`;
+        return;
+      }
+
+      list.forEach((edition) => {
+        const card = document.createElement("button");
+        card.className = "edition-card";
+        const winner = edition.winner_avatar || {};
+        const meta = [
+          formatArchivedAt(edition.archived_at),
+          edition.participant_count
+            ? `${edition.participant_count} ${edition.mode === "teams" ? "équipes" : "participants"}`
+            : null,
+          edition.winner_name ? `🏆 ${escapeHtml(edition.winner_name)}` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ");
+
+        card.innerHTML = `
+          ${renderAvatarHTML(winner, "md")}
+          <span class="edition-card-main">
+            <span class="edition-card-label">${escapeHtml(editionTitle(edition))}${
+              edition.mode === "teams" ? ` <span class="edition-mode-badge">Équipes</span>` : ""
+            }</span>
+            <span class="edition-card-meta">${meta}</span>
+          </span>
+          ${edition.winner_score != null ? `<span class="edition-card-score">${Number(edition.winner_score).toFixed(1)}</span>` : ""}
+        `;
+        card.addEventListener("click", () => AppWS.send({ type: "editions:get", id: edition.id }));
+        listEl.appendChild(card);
+      });
+
+      if (typeof gsap !== "undefined") {
+        gsap.from(listEl.children, { opacity: 0, y: 16, duration: 0.35, stagger: 0.05, ease: "power2.out" });
+      }
+    }
+
+    function renderDetail(edition) {
+      const results = edition.results || [];
+      detailDateEl.textContent = `Archivée le ${formatArchivedAt(edition.archived_at)}`;
+      detailTitleEl.textContent = editionTitle(edition);
+      const unit = edition.mode === "teams" ? "équipes" : "participants";
+      detailSubtitleEl.textContent = `${results.length} ${unit} · ${(edition.criteria || []).length} critères`;
+
+      const ranks = ResultsView.computeRanks(results);
+      ResultsView.renderPodium(podiumEl, results, ranks);
+      ResultsView.renderRankingList(rankingListEl, results, ranks);
+      // Pas d'animation de compteur ici : on affiche directement les scores finaux.
+      container.querySelectorAll(".podium-score, .ranking-score").forEach((el) => {
+        el.textContent = Number(el.dataset.final).toFixed(1);
+      });
+      showView("detail");
+    }
+
+    const onBack = () => {
+      if (currentView === "detail") showView("list");
+      else barba.go("index.html");
+    };
+    backBtn.addEventListener("click", onBack);
+
+    const offList = AppWS.on("editions:list", (data) => {
+      renderList(data.list);
+      reveal();
+    });
+
+    const offGet = AppWS.on("editions:get", (data) => {
+      if (!data.edition) {
+        alert("Cette édition est introuvable.");
+        return;
+      }
+      renderDetail(data.edition);
+    });
+
+    // Une édition vient d'être archivée ailleurs : on rafraîchit la liste.
+    const offArchived = AppWS.on("editions:archived", () => AppWS.send({ type: "editions:list" }));
+
+    AppWS.send({ type: "editions:list" });
+
+    return [offList, offGet, offArchived, () => backBtn.removeEventListener("click", onBack)];
   },
 });

@@ -1,0 +1,221 @@
+// ============================================================
+// THÈMES — "christmas" (activé via <html data-theme="christmas">)
+// ============================================================
+// Le thème classique correspond aux variables de _variables.scss. Le thème Noël
+// les redéfinit (vert sapin, crème, or, rouge) et ajoute neige + guirlande (voir
+// theme.js). Sélecteur :root[data-theme] : plus spécifique que :root, il gagne
+// aussi sur la variante claire du thème classique.
+
+:root[data-theme="christmas"] {
+  --bg: #0e1c16;
+  --card: #16291f;
+  --text: #f7f0e3;
+  --muted: #a8b9a9;
+  --accent: #e9c46a;
+  --accent-contrast: #1d1606;
+  --border: #29443a;
+  --xmas-red: #d62839;
+  --xmas-gold: #e9c46a;
+  --xmas-green: #2d6a4f;
+
+  color-scheme: dark;
+}
+
+[data-theme="christmas"] {
+  // Lueur verte en bas de page uniquement. Pas de dégradé en haut : Chrome peint
+  // les calques animés (neige, guirlande, logo fixe) sur un fond uni, ce qui
+  // dessinerait des rectangles visibles par-dessus un dégradé.
+  body {
+    background:
+      radial-gradient(ellipse 70% 360px at 50% calc(100% + 60px), rgba(45, 106, 79, 0.32), transparent 70%),
+      var(--bg);
+  }
+
+  // --- Logo aux couleurs de Noël (les couleurs de marque sont des attributs fill) ---
+  .app-logo {
+    top: 26px;
+
+    path[fill="#DE0076"] {
+      fill: var(--xmas-red);
+    }
+    path[fill="#2A9CD1"] {
+      fill: var(--text);
+    }
+    path[fill="#02413B"] {
+      fill: var(--xmas-gold);
+    }
+  }
+
+  // --- Touches festives ---
+  .btn-primary {
+    box-shadow: 0 4px 18px rgba(233, 196, 106, 0.25);
+  }
+
+  .state-card,
+  .edition-card,
+  .team-card,
+  .ranking-item {
+    border-color: var(--border);
+  }
+
+  .state-card {
+    position: relative;
+
+    // Petit ruban rouge en haut des cartes principales.
+    &::before {
+      content: "";
+      position: absolute;
+      top: -1px;
+      left: 50%;
+      width: 64px;
+      height: 4px;
+      transform: translateX(-50%);
+      border-radius: 0 0 4px 4px;
+      background: var(--xmas-red);
+    }
+  }
+
+  .state-card-eyebrow,
+  .results-intro-eyebrow {
+    color: var(--xmas-gold);
+  }
+
+  .countdown-number {
+    color: var(--xmas-gold);
+    text-shadow: 0 0 40px rgba(233, 196, 106, 0.45);
+  }
+
+  .countdown-overlay {
+    background: var(--bg);
+  }
+}
+
+// --- Neige (canvas créé par theme.js) ---
+.theme-snow {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 700; // sous le logo (800) et les barres fixes, au-dessus du contenu
+  pointer-events: none;
+}
+
+// --- Guirlande lumineuse (créée par theme.js) ---
+.theme-lights {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 750;
+  display: flex;
+  justify-content: space-between;
+  padding: 0 12px;
+  height: 26px;
+  // Pas d'overflow: hidden : le halo des ampoules doit pouvoir déborder sous la
+  // guirlande (le fil qui dépasse en haut sort de l'écran de toute façon).
+  overflow: visible;
+  pointer-events: none;
+
+  // Le fil qui ondule d'une ampoule à l'autre.
+  &::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: -14px;
+    height: 24px;
+    border-bottom: 1.5px solid rgba(247, 240, 227, 0.25);
+    border-radius: 0 0 50% 50% / 0 0 100% 100%;
+  }
+}
+
+.theme-bulb {
+  position: relative;
+  top: 8px;
+  width: 9px;
+  height: 13px;
+  border-radius: 50% 50% 50% 50% / 40% 40% 60% 60%;
+  animation: theme-twinkle 2.4s ease-in-out infinite;
+
+  // Culot de l'ampoule.
+  &::before {
+    content: "";
+    position: absolute;
+    top: -3px;
+    left: 2px;
+    width: 5px;
+    height: 4px;
+    border-radius: 1px;
+    background: #4a5a50;
+  }
+
+  &.theme-bulb-0 {
+    --bulb: #d62839;
+  }
+  &.theme-bulb-1 {
+    --bulb: #e9c46a;
+  }
+  &.theme-bulb-2 {
+    --bulb: #52b788;
+  }
+  &.theme-bulb-3 {
+    --bulb: #f7f0e3;
+  }
+
+  background: var(--bulb);
+  box-shadow: 0 0 10px 2px var(--bulb);
+}
+
+@keyframes theme-twinkle {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+    box-shadow: 0 0 2px 0 var(--bulb);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-bulb {
+    animation: none;
+  }
+}
+
+// --- Sélecteur de thème (panel admin) ---
+.panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.theme-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  color: var(--muted);
+
+  select {
+    padding: 6px 10px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font: inherit;
+  }
+}
+
+// Rappel dans le panel : en thème Noël, on importe les avatars de Noël.
+.theme-avatar-hint {
+  display: none;
+  padding: 8px 12px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+}
+
+[data-theme="christmas"] .theme-avatar-hint {
+  display: block;
+  border-color: var(--xmas-gold);
+}

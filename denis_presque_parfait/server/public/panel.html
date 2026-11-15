@@ -5,24 +5,51 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Panel - Un Denis Presque Parfait</title>
   <link rel="stylesheet" href="style.css" />
+  <script>
+    // Applique le dernier thème connu avant l'affichage (évite un flash au chargement).
+    try { var t = localStorage.getItem("denis_theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+  </script>
 </head>
 <body>
   <div id="app-logo"></div>
 
   <main class="wrap is-ready">
-    <h1>Panel admin</h1>
-
-    <div class="wizard-steps" id="wizard-steps" style="display: none;">
-      <span class="wizard-step-dot" data-step="1">1</span>
-      <span class="wizard-step-line"></span>
-      <span class="wizard-step-dot" data-step="2">2</span>
-      <span class="wizard-step-line"></span>
-      <span class="wizard-step-dot" data-step="3">3</span>
+    <div class="header-row">
+      <h1>Panel admin</h1>
+      <div class="panel-header-actions">
+        <label class="theme-picker">
+          <span>Thème</span>
+          <select id="theme-select">
+            <option value="classic">Classique</option>
+            <option value="christmas">Noël 🎄</option>
+          </select>
+        </label>
+        <a href="editions.html" class="panel-editions-link">Éditions passées</a>
+      </div>
     </div>
 
+    <!-- Pastilles générées selon le mode (3 étapes en solo, 4 en équipes). -->
+    <div class="wizard-steps" id="wizard-steps" style="display: none;"></div>
+
     <section class="wizard-panel" id="step-1" style="display: none;">
+      <span class="label">Mode de jeu</span>
+      <div class="mode-toggle" id="mode-toggle" role="radiogroup" aria-label="Mode de jeu">
+        <button type="button" class="mode-toggle-btn" data-mode="solo" role="radio">
+          <strong>Solo</strong>
+          <span>Chacun cuisine à son tour</span>
+        </button>
+        <button type="button" class="mode-toggle-btn" data-mode="teams" role="radio">
+          <strong>Équipes</strong>
+          <span>Chaque équipe cuisine ensemble</span>
+        </button>
+      </div>
+
       <span class="label">Ajoute les participants</span>
       <p class="hint">Chaque participant pourra recevoir un jour et noter les autres.</p>
+      <p class="hint theme-avatar-hint" id="theme-avatar-hint">
+        🎄 Thème Noël actif : les photos importées ici sont les <strong>avatars de Noël</strong>.
+        Un joueur sans avatar de Noël garde son avatar classique.
+      </p>
 
       <form id="participant-form" class="participant-form">
         <input id="participant-name-input" type="text" placeholder="Nom du participant" autocomplete="off" required />
@@ -32,9 +59,33 @@
       <ul class="participant-admin-list" id="participant-admin-list"></ul>
     </section>
 
+    <section class="wizard-panel" id="step-teams" style="display: none;">
+      <span class="label">Compose les équipes</span>
+      <p class="hint">Crée les équipes puis choisis l'équipe de chacun, ou laisse le hasard décider.</p>
+
+      <div class="teams-toolbar">
+        <form id="team-form" class="participant-form">
+          <input id="team-name-input" type="text" placeholder="Nom de l'équipe" autocomplete="off" required />
+          <button type="submit" class="btn btn-primary btn-sm">Créer</button>
+        </form>
+        <div class="teams-random">
+          <label class="teams-random-count">
+            <input id="teams-random-count" type="number" min="2" value="2" />
+            <span>équipes</span>
+          </label>
+          <button type="button" id="teams-random-btn" class="btn btn-secondary btn-sm">Tirage au sort</button>
+        </div>
+      </div>
+
+      <div class="teams-grid" id="teams-grid"></div>
+
+      <span class="label">Qui est dans quelle équipe ?</span>
+      <ul class="team-members-list" id="team-members-list"></ul>
+    </section>
+
     <section class="wizard-panel" id="step-2" style="display: none;">
-      <span class="label">Planifie les jours</span>
-      <p class="hint">Glisse un participant sur une date, ou assigne-les au hasard.</p>
+      <span class="label" id="step2-label">Planifie les jours</span>
+      <p class="hint" id="step2-hint">Glisse (ou touche) un participant puis une date, ou assigne-les au hasard.</p>
 
       <div class="draggable-row">
         <div class="draggable-participants" id="draggable-participants"></div>
@@ -46,14 +97,25 @@
 
     <section class="wizard-panel" id="step-3" style="display: none;">
       <span class="label">Critères de notation</span>
-      <p class="hint">Note maximale et coefficient (1 par défaut) pour chaque critère.</p>
+      <p class="hint">
+        Note maximale et coefficient (1 par défaut) pour chaque critère. Donne une catégorie (Plat, Dessert…) pour
+        noter chaque plat séparément : les résultats afficheront aussi une note par catégorie.
+      </p>
 
       <form id="criterion-form" class="criterion-form">
+        <input id="criterion-category-input" type="text" list="criterion-category-options" placeholder="Catégorie (ex: Plat) — facultatif" autocomplete="off" />
         <input id="criterion-label-input" type="text" placeholder="Nom du critère (ex: Le goût)" autocomplete="off" required />
         <input id="criterion-max-input" type="number" min="2" max="20" value="5" title="Note max" required />
         <input id="criterion-coef-input" type="number" min="0.5" max="10" step="0.5" value="1" title="Coefficient" required />
         <button type="submit" class="btn btn-primary btn-sm">Ajouter</button>
       </form>
+
+      <datalist id="criterion-category-options">
+        <option value="Entrée"></option>
+        <option value="Plat"></option>
+        <option value="Dessert"></option>
+        <option value="Ambiance"></option>
+      </datalist>
 
       <ul class="criterion-admin-list" id="criterion-admin-list"></ul>
     </section>
@@ -67,6 +129,15 @@
         </div>
       </div>
 
+      <section class="bonus-admin" id="bonus-admin" style="display: none;">
+        <div class="bonus-admin-text">
+          <span class="label">★ Vote bonus en cours</span>
+          <strong id="bonus-admin-progress"></strong>
+          <span class="hint" id="bonus-admin-pending"></span>
+        </div>
+        <button type="button" id="bonus-close-btn" class="btn btn-primary btn-sm">Clôturer et révéler les résultats</button>
+      </section>
+
       <div class="dashboard-grid">
         <div class="dashboard-main">
           <div class="votes-tabs" id="votes-tabs"></div>
@@ -74,6 +145,10 @@
         </div>
         <div class="dashboard-side">
           <span class="label">Calendrier</span>
+          <p class="hint">
+            Un imprévu ? Touche un cuisinier puis un autre jour pour le déplacer, ou un autre cuisinier pour échanger leurs dates.
+            Les jours déjà notés ne bougent plus.
+          </p>
           <div class="calendar" id="assignment-calendar-dashboard"></div>
         </div>
       </div>
@@ -116,8 +191,9 @@
     <button id="wizard-next-btn" class="btn btn-primary" disabled>Suivant</button>
   </div>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="vendor/html2canvas/html2canvas.min.js"></script>
   <script src="client.js"></script>
+  <script src="theme.js"></script>
   <script src="avatar.js"></script>
   <script src="logo.js"></script>
   <script src="share.js"></script>
@@ -127,29 +203,53 @@
     initLogo();
 
     let currentParticipants = [];
-    let currentUnassignedIds = new Set();
+    let currentTeams = [];
+    let currentUnassignedCooks = [];
     let currentCriteria = [];
     let currentVotes = [];
-    let setupStatus = { participantsCount: 0, unassignedCount: 0, criteriaCount: 0, hasStarted: false };
+    let setupStatus = {
+      mode: "solo",
+      participantsCount: 0,
+      unassignedCount: 0,
+      criteriaCount: 0,
+      hasStarted: false,
+      teamsReady: true,
+    };
     let view = null;
     let resetInProgress = false;
-    let maxReachedStep = 1;
+    let maxReachedIndex = 0;
     let hasCompletedWizardOnce = false;
-    let selectedVoteParticipantId = null;
+    let selectedVoteCookId = null;
+
+    const isTeamsMode = () => setupStatus.mode === "teams";
 
     const wizardStepsEl = document.getElementById("wizard-steps");
-    const step1El = document.getElementById("step-1");
-    const step2El = document.getElementById("step-2");
-    const step3El = document.getElementById("step-3");
+    const stepEls = {
+      step1: document.getElementById("step-1"),
+      stepTeams: document.getElementById("step-teams"),
+      step2: document.getElementById("step-2"),
+      step3: document.getElementById("step-3"),
+    };
     const dashboardEl = document.getElementById("dashboard");
     const editSetupBtn = document.getElementById("edit-setup-btn");
 
-    function decideInitialView() {
-      if (setupStatus.hasStarted) return "dashboard";
+    // Étapes du wizard : l'étape "Équipes" n'existe qu'en mode équipes.
+    function wizardSteps() {
+      return isTeamsMode() ? ["step1", "stepTeams", "step2", "step3"] : ["step1", "step2", "step3"];
+    }
+
+    // Première étape encore incomplète (ou "dashboard" si tout est prêt).
+    function firstIncompleteView() {
       if (setupStatus.participantsCount === 0) return "step1";
+      if (isTeamsMode() && !setupStatus.teamsReady) return "stepTeams";
       if (setupStatus.unassignedCount > 0) return "step2";
       if (setupStatus.criteriaCount === 0) return "step3";
       return "dashboard";
+    }
+
+    function decideInitialView() {
+      if (setupStatus.hasStarted) return "dashboard";
+      return firstIncompleteView();
     }
 
     function syncProgressFromStatus() {
@@ -157,41 +257,62 @@
         hasCompletedWizardOnce = true;
         return;
       }
+      const target = firstIncompleteView();
+      if (target === "dashboard") {
+        hasCompletedWizardOnce = true;
+        return;
+      }
       if (setupStatus.participantsCount === 0) {
-        maxReachedStep = 1;
+        maxReachedIndex = 0;
         hasCompletedWizardOnce = false;
         return;
       }
-      maxReachedStep = Math.max(maxReachedStep, 2);
-      if (setupStatus.unassignedCount === 0) {
-        maxReachedStep = Math.max(maxReachedStep, 3);
-      }
-      if (setupStatus.criteriaCount > 0 && setupStatus.unassignedCount === 0) {
-        hasCompletedWizardOnce = true;
-      }
+      maxReachedIndex = Math.max(maxReachedIndex, wizardSteps().indexOf(target));
     }
 
-    function isStepClickable(stepNum) {
+    function isStepClickable(stepView) {
       if (hasCompletedWizardOnce) return true;
-      return stepNum <= maxReachedStep;
+      return wizardSteps().indexOf(stepView) <= maxReachedIndex;
     }
 
     function setView(newView) {
+      // Une étape qui n'existe plus dans le mode courant (ex : "Équipes" en solo).
+      if (newView !== "dashboard" && !wizardSteps().includes(newView)) newView = decideInitialView();
       view = newView;
       if (newView === "dashboard") hasCompletedWizardOnce = true;
       renderView();
     }
 
+    function renderWizardDots() {
+      const steps = wizardSteps();
+      const currentIndex = steps.indexOf(view);
+      wizardStepsEl.innerHTML = "";
+      steps.forEach((stepView, i) => {
+        if (i > 0) {
+          const line = document.createElement("span");
+          line.className = "wizard-step-line";
+          wizardStepsEl.appendChild(line);
+        }
+        const dot = document.createElement("span");
+        dot.className = "wizard-step-dot";
+        dot.textContent = i + 1;
+        dot.classList.toggle("active", i === currentIndex);
+        dot.classList.toggle("done", i < currentIndex);
+        dot.classList.toggle("clickable", isStepClickable(stepView));
+        dot.addEventListener("click", () => {
+          if (isStepClickable(stepView)) setView(stepView);
+        });
+        wizardStepsEl.appendChild(dot);
+      });
+    }
+
     function renderView() {
       if (view === null) return;
+      if (view !== "dashboard" && !wizardSteps().includes(view)) view = decideInitialView();
 
-      step1El.style.display = "none";
-      step2El.style.display = "none";
-      step3El.style.display = "none";
+      Object.values(stepEls).forEach((el) => (el.style.display = "none"));
       dashboardEl.style.display = "none";
       wizardStepsEl.style.display = "none";
-
-      const stepNumberByView = { step1: 1, step2: 2, step3: 3 };
 
       if (view === "dashboard") {
         dashboardEl.style.display = "block";
@@ -199,23 +320,12 @@
         calendarDashboard.reloadCurrentMonth();
       } else {
         wizardStepsEl.style.display = "flex";
-        const currentStepNum = stepNumberByView[view];
-        wizardStepsEl.querySelectorAll(".wizard-step-dot").forEach((dot) => {
-          const step = Number(dot.dataset.step);
-          dot.classList.toggle("active", step === currentStepNum);
-          dot.classList.toggle("done", step < currentStepNum);
-          dot.classList.toggle("clickable", isStepClickable(step));
-        });
-
-        if (view === "step1") step1El.style.display = "block";
-        if (view === "step2") {
-          step2El.style.display = "block";
-          calendarStep2.reloadCurrentMonth();
-        }
-        if (view === "step3") step3El.style.display = "block";
+        renderWizardDots();
+        stepEls[view].style.display = "block";
+        if (view === "step2") calendarStep2.reloadCurrentMonth();
       }
 
-      const cfg = stepConfig[view];
+      const cfg = stepConfig(view);
       if (cfg) {
         wizardFixedBarEl.style.display = "flex";
         wizardBackBtn.style.visibility = cfg.back ? "visible" : "hidden";
@@ -225,46 +335,46 @@
       }
       document.querySelector("main.wrap").classList.toggle("has-wizard-bar", !!cfg);
 
+      renderModeToggle();
+      renderStep2Texts();
       updateNavButtonsState();
     }
 
     function updateNavButtonsState() {
       const disabledByStep = {
-        step1: setupStatus.participantsCount === 0,
-        step2: setupStatus.participantsCount === 0 || setupStatus.unassignedCount > 0,
+        step1: setupStatus.participantsCount < 2,
+        stepTeams: !setupStatus.teamsReady,
+        step2: setupStatus.participantsCount === 0 || setupStatus.unassignedCount > 0 || !setupStatus.teamsReady,
         step3: setupStatus.criteriaCount === 0,
       };
       wizardNextBtn.disabled = !!disabledByStep[view];
     }
 
-    wizardStepsEl.querySelectorAll(".wizard-step-dot").forEach((dot) => {
-      dot.addEventListener("click", () => {
-        const step = Number(dot.dataset.step);
-        if (!isStepClickable(step)) return;
-        setView(`step${step}`);
-      });
-    });
-
     const wizardFixedBarEl = document.getElementById("wizard-fixed-bar");
     const wizardBackBtn = document.getElementById("wizard-back-btn");
     const wizardNextBtn = document.getElementById("wizard-next-btn");
 
-    const stepConfig = {
-      step1: { back: null, next: "step2", nextLabel: "Suivant" },
-      step2: { back: "step1", next: "step3", nextLabel: "Suivant" },
-      step3: { back: "step2", next: "dashboard", nextLabel: "Terminer" },
-    };
+    function stepConfig(stepView) {
+      const steps = wizardSteps();
+      const i = steps.indexOf(stepView);
+      if (i === -1) return null;
+      const isLast = i === steps.length - 1;
+      return {
+        back: i > 0 ? steps[i - 1] : null,
+        next: isLast ? "dashboard" : steps[i + 1],
+        nextLabel: isLast ? "Terminer" : "Suivant",
+      };
+    }
 
     wizardBackBtn.addEventListener("click", () => {
-      const cfg = stepConfig[view];
+      const cfg = stepConfig(view);
       if (cfg && cfg.back) setView(cfg.back);
     });
 
     wizardNextBtn.addEventListener("click", () => {
-      const cfg = stepConfig[view];
+      const cfg = stepConfig(view);
       if (!cfg) return;
-      if (cfg.next === "step2") maxReachedStep = Math.max(maxReachedStep, 2);
-      if (cfg.next === "step3") maxReachedStep = Math.max(maxReachedStep, 3);
+      if (cfg.next !== "dashboard") maxReachedIndex = Math.max(maxReachedIndex, wizardSteps().indexOf(cfg.next));
       setView(cfg.next);
     });
 
@@ -274,42 +384,96 @@
       ws.send(JSON.stringify({ type: "assignments:random" }));
     });
 
+    // --- Mode de jeu (solo / équipes) ---
+    const modeToggleEl = document.getElementById("mode-toggle");
+
+    function renderModeToggle() {
+      modeToggleEl.querySelectorAll(".mode-toggle-btn").forEach((btn) => {
+        const active = btn.dataset.mode === setupStatus.mode;
+        btn.classList.toggle("active", active);
+        btn.setAttribute("aria-checked", active ? "true" : "false");
+        btn.disabled = setupStatus.hasStarted;
+      });
+    }
+
+    modeToggleEl.querySelectorAll(".mode-toggle-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const mode = btn.dataset.mode;
+        if (mode === setupStatus.mode) return;
+        const plannedDays = setupStatus.participantsCount > 0 && setupStatus.unassignedCount < (isTeamsMode() ? setupStatus.teamsCount : setupStatus.participantsCount);
+        if (plannedDays && !confirm("Changer de mode vide le calendrier déjà planifié. Continuer ?")) return;
+        ws.send(JSON.stringify({ type: "mode:set", mode }));
+      });
+    });
+
+    function renderStep2Texts() {
+      document.getElementById("step2-hint").textContent = isTeamsMode()
+        ? "Glisse (ou touche) une équipe puis une date, ou assigne-les au hasard."
+        : "Glisse (ou touche) un participant puis une date, ou assigne-les au hasard.";
+    }
+
+    function resetPanelProgress() {
+      selectedVoteCookId = null;
+      const resultEl = document.getElementById("votes-result");
+      if (resultEl) resultEl.innerHTML = "";
+      maxReachedIndex = 0;
+      hasCompletedWizardOnce = false;
+    }
+
     const ws = connectWS({
       onParticipants: (list) => {
         currentParticipants = list || [];
         renderParticipants(currentParticipants);
-        renderVotesTabs(currentParticipants);
+        renderTeamMembers();
+        renderVotesTabs();
       },
-      onUnassignedParticipants: (list) => {
-        currentUnassignedIds = new Set((list || []).map((p) => p.id));
-        renderDraggableParticipants(currentParticipants);
+      onTeams: (list) => {
+        currentTeams = list || [];
+        renderTeams();
+        renderTeamMembers();
+        renderVotesTabs();
+      },
+      onUnassignedCooks: (list) => {
+        currentUnassignedCooks = list || [];
+        renderDraggableCooks();
       },
       onAssignmentsList: (month, list) => {
         calendarStep2.setAssignments(month, list);
         calendarDashboard.setAssignments(month, list);
       },
-      onAssignmentUpdate: (date, participantId, participantName, hasVotes, avatarIcon, avatarColor, avatarImage) => {
-        calendarStep2.applyUpdate(date, participantId, participantName, hasVotes, avatarIcon, avatarColor, avatarImage);
-        calendarDashboard.applyUpdate(date, participantId, participantName, hasVotes, avatarIcon, avatarColor, avatarImage);
+      onAssignmentUpdate: (date, assignment) => {
+        calendarStep2.applyUpdate(date, assignment);
+        calendarDashboard.applyUpdate(date, assignment);
+      },
+      onCalendarReload: () => {
+        calendarStep2.reloadCurrentMonth();
+        calendarDashboard.reloadCurrentMonth();
       },
       onAssignmentError: (message) => alert(message),
       onAssignmentsRandomDone: () => {
         calendarStep2.reloadCurrentMonth();
         calendarDashboard.reloadCurrentMonth();
       },
-      onAssignmentForParticipant: (participantId, date) => renderVotesForParticipantAfterDateLookup(participantId, date),
+      onAssignmentForCook: (cookId, date) => renderVotesForCookAfterDateLookup(cookId, date),
       onCriteria: (list) => {
         currentCriteria = list || [];
         renderCriteria(currentCriteria);
       },
       onCriteriaError: (message) => alert(message),
       onParticipantsError: (message) => alert(message),
+      onTeamsError: (message) => alert(message),
+      onModeError: (message) => alert(message),
       onVotesList: (list) => {
         currentVotes = list || [];
-        if (selectedVoteParticipantId) renderVotesForParticipant(selectedVoteParticipantId);
+        if (selectedVoteCookId) renderVotesForCook(selectedVoteCookId);
       },
       onSetupStatus: (status) => {
+        const modeChanged = status.mode !== setupStatus.mode;
         setupStatus = status;
+        if (modeChanged) {
+          selectedVoteCookId = null;
+          renderVotesTabs();
+        }
         syncProgressFromStatus();
 
         if (resetInProgress) {
@@ -327,17 +491,48 @@
         alert("Une erreur est survenue côté serveur : " + message);
       },
       onDbResetDone: () => {
-        selectedVoteParticipantId = null;
-        const resultEl = document.getElementById("votes-result");
-        if (resultEl) resultEl.innerHTML = "";
-        maxReachedStep = 1;
-        hasCompletedWizardOnce = false;
+        resetPanelProgress();
         alert("Base de données réinitialisée.");
       },
     });
 
+    // Édition archivée (depuis la page résultats) : on repart sur le wizard, à
+    // l'étape qui manque (calendrier si participants/critères ont été gardés).
+    AppWS.on("editions:archived", () => {
+      resetPanelProgress();
+      resetInProgress = true;
+    });
+
+    // --- Vote bonus (après le dernier repas, avant les résultats) ---
+    const bonusAdminEl = document.getElementById("bonus-admin");
+    AppWS.on("game:phase", (data) => {
+      const inBonus = data.phase === "bonus" && data.bonus;
+      bonusAdminEl.style.display = inBonus ? "flex" : "none";
+      if (!inBonus) return;
+      document.getElementById("bonus-admin-progress").textContent =
+        `${data.bonus.voted_count} / ${data.bonus.expected_count} ont donné leur point bonus`;
+      document.getElementById("bonus-admin-pending").textContent = data.bonus.pending.length
+        ? `On attend : ${data.bonus.pending.map((p) => p.name).join(", ")}`
+        : "";
+    });
+    AppWS.on("bonus:error", (data) => alert(data.message));
+    document.getElementById("bonus-close-btn").addEventListener("click", () => {
+      if (confirm("Clôturer le vote bonus ? Ceux qui n'ont pas voté ne pourront plus le faire, et les résultats seront révélés.")) {
+        ws.send(JSON.stringify({ type: "bonus:close" }));
+      }
+    });
+
+    // --- Thème visuel (appliqué en direct sur tous les écrans connectés) ---
+    const themeSelect = document.getElementById("theme-select");
+    themeSelect.value = ThemeManager.get();
+    document.addEventListener("themechange", (e) => (themeSelect.value = e.detail.theme));
+    themeSelect.addEventListener("change", () => {
+      ws.send(JSON.stringify({ type: "theme:set", theme: themeSelect.value }));
+    });
+
     ws.send(JSON.stringify({ type: "votes:list" }));
     ws.send(JSON.stringify({ type: "setup:status" }));
+    ws.send(JSON.stringify({ type: "game:status" }));
 
     // --- Diffusion TV (Apple TV via Home Assistant) ---
     const tvPlayerSelect = document.getElementById("tv-player-select");
@@ -465,6 +660,8 @@
           container: pickerContainer,
           color: p.avatar_color,
           image: p.avatar_image,
+          themeLabel: ThemeManager.get() === "christmas" ? "de Noël" : null,
+          themedImage: !!p.avatar_themed,
           onChange: (result) => {
             if (result.mode === "color") {
               ws.send(JSON.stringify({ type: "participants:avatar:color", id: p.id, color: result.color }));
@@ -507,45 +704,188 @@
 
     const draggableEl = document.getElementById("draggable-participants");
 
-    function renderDraggableParticipants(list) {
-      draggableEl.innerHTML = "";
-      const unassignedOnly = (list || []).filter((p) => currentUnassignedIds.has(p.id));
+    // Cuisiniers (participants ou équipes) pas encore planifiés : on les glisse sur
+    // le calendrier, ou on les touche puis on touche un jour (mobile).
+    let pendingCookId = null;
 
-      if (unassignedOnly.length === 0) {
+    function renderDraggableCooks() {
+      draggableEl.innerHTML = "";
+
+      if (currentUnassignedCooks.length === 0) {
         const emptyMsg = document.createElement("span");
         emptyMsg.className = "draggable-empty";
-        emptyMsg.textContent = "Tout le monde est planifié.";
+        emptyMsg.textContent = isTeamsMode() ? "Toutes les équipes sont planifiées." : "Tout le monde est planifié.";
         draggableEl.appendChild(emptyMsg);
         return;
       }
 
-      unassignedOnly.forEach((p) => {
+      currentUnassignedCooks.forEach((c) => {
         const pill = document.createElement("div");
         pill.className = "draggable-pill";
-        pill.style.background = p.avatar_color || "var(--accent)";
+        if (pendingCookId === c.cook_id) pill.classList.add("draggable-pill-selected");
+        pill.style.background = c.avatar_color || "var(--accent)";
 
-        pill.appendChild(createAvatarElement(p, "xs"));
+        pill.appendChild(createAvatarElement(c, "xs"));
         const nameSpan = document.createElement("span");
-        nameSpan.textContent = p.name;
+        nameSpan.textContent = c.kind === "team" ? `${c.cook_name} (${c.members.length})` : c.cook_name;
         pill.appendChild(nameSpan);
 
         pill.draggable = true;
         pill.addEventListener("dragstart", (e) => {
-          e.dataTransfer.setData("text/participant-id", p.id);
+          e.dataTransfer.setData("text/cook-id", c.cook_id);
+        });
+        pill.addEventListener("click", () => {
+          pendingCookId = pendingCookId === c.cook_id ? null : c.cook_id;
+          calendarStep2.selectCook(pendingCookId);
+          renderDraggableCooks();
         });
 
         draggableEl.appendChild(pill);
       });
     }
 
-    function makeAdminCalendar(containerId, editable) {
+    // --- Étape "Équipes" ---
+    const teamFormEl = document.getElementById("team-form");
+    const teamNameInputEl = document.getElementById("team-name-input");
+    const teamsGridEl = document.getElementById("teams-grid");
+    const teamMembersListEl = document.getElementById("team-members-list");
+    const teamsRandomCountEl = document.getElementById("teams-random-count");
+
+    teamFormEl.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const name = teamNameInputEl.value.trim();
+      if (!name) return;
+      ws.send(JSON.stringify({ type: "teams:add", name }));
+      teamNameInputEl.value = "";
+    });
+
+    document.getElementById("teams-random-btn").addEventListener("click", () => {
+      const count = Number(teamsRandomCountEl.value);
+      const alreadyComposed = currentParticipants.some((p) => p.team_id);
+      if (alreadyComposed && !confirm(`Refaire les équipes au hasard en ${count} équipes ? La répartition actuelle sera perdue.`)) return;
+      ws.send(JSON.stringify({ type: "teams:random", count }));
+    });
+
+    function renderTeams() {
+      teamsGridEl.innerHTML = "";
+      teamsRandomCountEl.max = Math.max(2, currentParticipants.length);
+
+      if (currentTeams.length === 0) {
+        teamsGridEl.innerHTML = `<p class="hint">Aucune équipe pour l'instant : crée-les ou fais un tirage au sort.</p>`;
+        return;
+      }
+
+      currentTeams.forEach((t) => {
+        const card = document.createElement("div");
+        card.className = "team-card";
+        card.style.setProperty("--team-color", t.avatar_color);
+
+        const header = document.createElement("div");
+        header.className = "team-card-header";
+
+        const swatch = document.createElement("span");
+        swatch.className = "team-card-swatch";
+        header.appendChild(swatch);
+
+        const nameInput = document.createElement("input");
+        nameInput.type = "text";
+        nameInput.value = t.name;
+        nameInput.className = "team-card-name";
+        nameInput.addEventListener("change", () => {
+          const newName = nameInput.value.trim();
+          if (newName && newName !== t.name) ws.send(JSON.stringify({ type: "teams:rename", id: t.id, name: newName }));
+          else nameInput.value = t.name;
+        });
+        header.appendChild(nameInput);
+
+        const deleteBtn = document.createElement("button");
+        deleteBtn.type = "button";
+        deleteBtn.className = "btn btn-danger btn-sm";
+        deleteBtn.textContent = "Supprimer";
+        deleteBtn.disabled = setupStatus.hasStarted;
+        deleteBtn.addEventListener("click", () => {
+          if (confirm(`Supprimer l'équipe "${t.name}" ? Ses membres redeviennent sans équipe.`)) {
+            ws.send(JSON.stringify({ type: "teams:delete", id: t.id }));
+          }
+        });
+        header.appendChild(deleteBtn);
+        card.appendChild(header);
+
+        const members = document.createElement("div");
+        members.className = "team-card-members";
+        if (t.members.length === 0) {
+          members.innerHTML = `<span class="hint">Personne pour l'instant</span>`;
+        } else {
+          t.members.forEach((m) => {
+            const chip = document.createElement("span");
+            chip.className = "team-card-member";
+            chip.appendChild(createAvatarElement(m, "xs"));
+            const n = document.createElement("span");
+            n.textContent = m.name;
+            chip.appendChild(n);
+            members.appendChild(chip);
+          });
+        }
+        card.appendChild(members);
+        teamsGridEl.appendChild(card);
+      });
+    }
+
+    // Un sélecteur d'équipe par participant : simple et utilisable au téléphone.
+    function renderTeamMembers() {
+      teamMembersListEl.innerHTML = "";
+      currentParticipants.forEach((p) => {
+        const li = document.createElement("li");
+        li.className = "team-member-row";
+        if (!p.team_id) li.classList.add("team-member-row-missing");
+
+        li.appendChild(createAvatarElement(p, "sm"));
+        const name = document.createElement("span");
+        name.className = "team-member-name";
+        name.textContent = p.name;
+        li.appendChild(name);
+
+        const select = document.createElement("select");
+        select.className = "team-member-select";
+        select.disabled = setupStatus.hasStarted || currentTeams.length === 0;
+        select.innerHTML =
+          `<option value="">Sans équipe</option>` +
+          currentTeams.map((t) => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join("");
+        select.value = p.team_id ? String(p.team_id) : "";
+        select.addEventListener("change", () => {
+          ws.send(JSON.stringify({ type: "teams:set_member", participant_id: p.id, team_id: select.value ? Number(select.value) : null }));
+        });
+        li.appendChild(select);
+        teamMembersListEl.appendChild(li);
+      });
+    }
+
+    function shortDateFr(dateStr) {
+      const [y, m, d] = dateStr.split("-").map(Number);
+      return new Date(y, m - 1, d).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+    }
+
+    function makeAdminCalendar(containerId, editable, { allowRemove = true, confirmChanges = false } = {}) {
       const el = document.getElementById(containerId);
       const calendar = createCalendar({
         container: el,
         editable,
+        allowRemove,
         onAssign: editable
-          ? (date, participantId) => {
-              ws.send(JSON.stringify({ type: "assignments:set", date, participant_id: participantId }));
+          ? (date, cookId, info = {}) => {
+              // En cours de partie, on confirme : tout le monde voit le changement en direct.
+              if (confirmChanges && info.source) {
+                const who = info.source.cook_name;
+                const message = info.occupant
+                  ? `Échanger ${who} (${shortDateFr(info.source.date)}) et ${info.occupant.cook_name} (${shortDateFr(date)}) ?`
+                  : `Déplacer ${who} du ${shortDateFr(info.source.date)} au ${shortDateFr(date)} ?`;
+                if (!confirm(message)) return;
+              }
+              if (pendingCookId !== null) {
+                pendingCookId = null;
+                renderDraggableCooks();
+              }
+              ws.send(JSON.stringify({ type: "assignments:set", date, cook_id: cookId }));
             }
           : undefined,
         onUnassign: editable
@@ -565,10 +905,14 @@
     }
 
     const calendarStep2 = makeAdminCalendar("assignment-calendar-step2", true);
-    const calendarDashboard = makeAdminCalendar("assignment-calendar-dashboard", false);
+    const calendarDashboard = makeAdminCalendar("assignment-calendar-dashboard", true, {
+      allowRemove: false,
+      confirmChanges: true,
+    });
 
     const criterionFormEl = document.getElementById("criterion-form");
     const criterionLabelInput = document.getElementById("criterion-label-input");
+    const criterionCategoryInput = document.getElementById("criterion-category-input");
     const criterionMaxInput = document.getElementById("criterion-max-input");
     const criterionCoefInput = document.getElementById("criterion-coef-input");
     const criterionListEl = document.getElementById("criterion-admin-list");
@@ -578,19 +922,56 @@
       const label = criterionLabelInput.value.trim();
       const maxNote = Number(criterionMaxInput.value);
       const coefficient = Number(criterionCoefInput.value) || 1;
+      const category = criterionCategoryInput.value.trim();
       if (!label || !maxNote) return;
-      ws.send(JSON.stringify({ type: "criteria:add", label, max_note: maxNote, coefficient }));
+      ws.send(JSON.stringify({ type: "criteria:add", label, max_note: maxNote, coefficient, category }));
+      // On garde la catégorie saisie : on enchaîne souvent plusieurs critères du même plat.
       criterionLabelInput.value = "";
+      criterionLabelInput.focus();
       criterionMaxInput.value = 5;
       criterionCoefInput.value = 1;
     });
 
     function renderCriteria(list) {
       criterionListEl.innerHTML = "";
+      const sendUpdate = (c, changes) =>
+        ws.send(
+          JSON.stringify({
+            type: "criteria:update",
+            id: c.id,
+            label: c.label,
+            max_note: c.max_note,
+            coefficient: c.coefficient,
+            category: c.category || "",
+            ...changes,
+          })
+        );
+      const hasCategories = (list || []).some((c) => c.category);
+      let currentCategory;
+
       (list || []).forEach((c, index) => {
+        // En-tête de catégorie (les critères arrivent déjà groupés du serveur).
+        const category = c.category || null;
+        if (hasCategories && category !== currentCategory) {
+          currentCategory = category;
+          const header = document.createElement("li");
+          header.className = "criterion-category-header";
+          header.textContent = category || "Sans catégorie";
+          criterionListEl.appendChild(header);
+        }
+
         const li = document.createElement("li");
         li.className = "criterion-admin-item";
         if (c.has_votes) li.classList.add("criterion-admin-item-locked");
+
+        const categoryInput = document.createElement("input");
+        categoryInput.type = "text";
+        categoryInput.value = c.category || "";
+        categoryInput.placeholder = "Catégorie";
+        categoryInput.setAttribute("list", "criterion-category-options");
+        categoryInput.className = "criterion-admin-category";
+        categoryInput.title = "Catégorie (Plat, Dessert…)";
+        categoryInput.addEventListener("change", () => sendUpdate(c, { category: categoryInput.value.trim() }));
 
         const labelInput = document.createElement("input");
         labelInput.type = "text";
@@ -598,11 +979,7 @@
         labelInput.className = "criterion-admin-label";
         labelInput.addEventListener("change", () => {
           const newLabel = labelInput.value.trim();
-          if (newLabel) {
-            ws.send(
-              JSON.stringify({ type: "criteria:update", id: c.id, label: newLabel, max_note: c.max_note, coefficient: c.coefficient })
-            );
-          }
+          if (newLabel) sendUpdate(c, { label: newLabel });
         });
 
         const maxInput = document.createElement("input");
@@ -614,11 +991,7 @@
         maxInput.title = "Note max";
         maxInput.addEventListener("change", () => {
           const newMax = Number(maxInput.value);
-          if (newMax) {
-            ws.send(
-              JSON.stringify({ type: "criteria:update", id: c.id, label: c.label, max_note: newMax, coefficient: c.coefficient })
-            );
-          }
+          if (newMax) sendUpdate(c, { max_note: newMax });
         });
 
         const coefInput = document.createElement("input");
@@ -629,17 +1002,17 @@
         coefInput.value = c.coefficient;
         coefInput.className = "criterion-admin-coef";
         coefInput.title = "Coefficient";
-        coefInput.addEventListener("change", () => {
-          const newCoef = Number(coefInput.value) || 1;
-          ws.send(
-            JSON.stringify({ type: "criteria:update", id: c.id, label: c.label, max_note: c.max_note, coefficient: newCoef })
-          );
-        });
+        coefInput.addEventListener("change", () => sendUpdate(c, { coefficient: Number(coefInput.value) || 1 }));
+
+        // Les flèches réordonnent à l'intérieur d'une même catégorie.
+        const prev = list[index - 1];
+        const next = list[index + 1];
+        const sameCat = (other) => other && (other.category || null) === category;
 
         const upBtn = document.createElement("button");
         upBtn.className = "btn btn-secondary btn-sm";
         upBtn.textContent = "↑";
-        upBtn.disabled = index === 0 || c.has_votes;
+        upBtn.disabled = !sameCat(prev) || c.has_votes;
         upBtn.addEventListener("click", () => {
           ws.send(JSON.stringify({ type: "criteria:move", id: c.id, direction: "up" }));
         });
@@ -647,7 +1020,7 @@
         const downBtn = document.createElement("button");
         downBtn.className = "btn btn-secondary btn-sm";
         downBtn.textContent = "↓";
-        downBtn.disabled = index === list.length - 1 || c.has_votes;
+        downBtn.disabled = !sameCat(next) || c.has_votes;
         downBtn.addEventListener("click", () => {
           ws.send(JSON.stringify({ type: "criteria:move", id: c.id, direction: "down" }));
         });
@@ -664,6 +1037,7 @@
 
         li.appendChild(upBtn);
         li.appendChild(downBtn);
+        li.appendChild(categoryInput);
         li.appendChild(labelInput);
         li.appendChild(maxInput);
         li.appendChild(coefInput);
@@ -677,45 +1051,57 @@
     const votesTabsEl = document.getElementById("votes-tabs");
     const votesResultEl = document.getElementById("votes-result");
 
-    function renderVotesTabs(participants) {
-      votesTabsEl.innerHTML = "";
-      const list = participants || [];
+    // Onglets du suivi des votes : un par cuisinier (participant en solo, équipe
+    // en mode équipes).
+    function voteCooks() {
+      return isTeamsMode()
+        ? currentTeams.map((t) => ({ id: t.id, name: t.name }))
+        : currentParticipants.map((p) => ({ id: p.id, name: p.name }));
+    }
 
-      if (selectedVoteParticipantId === null && list.length > 0) {
-        selectedVoteParticipantId = list[0].id;
+    function votesForCook(cookId) {
+      const kind = isTeamsMode() ? "team" : "participant";
+      return currentVotes.filter((v) => v.target_id === cookId && v.target_kind === kind);
+    }
+
+    function renderVotesTabs() {
+      votesTabsEl.innerHTML = "";
+      const list = voteCooks();
+
+      if (!list.some((c) => c.id === selectedVoteCookId)) {
+        selectedVoteCookId = list.length > 0 ? list[0].id : null;
       }
 
-      list.forEach((p) => {
+      list.forEach((c) => {
         const tab = document.createElement("button");
         tab.type = "button";
         tab.className = "votes-tab";
-        if (p.id === selectedVoteParticipantId) tab.classList.add("active");
-        tab.textContent = p.name;
+        if (c.id === selectedVoteCookId) tab.classList.add("active");
+        tab.textContent = c.name;
         tab.addEventListener("click", () => {
-          selectedVoteParticipantId = p.id;
-          renderVotesTabs(currentParticipants);
-          renderVotesForParticipant(p.id);
+          selectedVoteCookId = c.id;
+          renderVotesTabs();
         });
         votesTabsEl.appendChild(tab);
       });
 
-      if (selectedVoteParticipantId !== null) {
-        renderVotesForParticipant(selectedVoteParticipantId);
-      }
+      if (selectedVoteCookId !== null) renderVotesForCook(selectedVoteCookId);
+      else votesResultEl.innerHTML = "";
     }
 
-    function renderVotesForParticipant(participantId) {
-      const rows = currentVotes.filter((v) => v.target_participant_id === participantId);
+    function renderVotesForCook(cookId) {
+      const rows = votesForCook(cookId);
       if (rows.length === 0) {
-        ws.send(JSON.stringify({ type: "assignments:get_for_participant", participant_id: participantId }));
+        ws.send(JSON.stringify({ type: "assignments:get_for_cook", cook_id: cookId }));
         votesResultEl.innerHTML = `<p class="hint">Chargement...</p>`;
         return;
       }
       renderVotesTable(rows);
     }
 
-    function renderVotesForParticipantAfterDateLookup(participantId, date) {
-      const rows = currentVotes.filter((v) => v.target_participant_id === participantId);
+    function renderVotesForCookAfterDateLookup(cookId, date) {
+      if (cookId !== selectedVoteCookId) return;
+      const rows = votesForCook(cookId);
       if (rows.length > 0) {
         renderVotesTable(rows);
         return;
@@ -732,7 +1118,12 @@
         : [...new Map(rows.map((r) => [r.criterion_id, { id: r.criterion_id, label: r.criterion_label, max_note: r.max_note }])).values()];
 
       let html = `<table class="votes-table"><thead><tr><th>Votant</th>`;
-      criteriaInRows.forEach((c) => (html += `<th>${c.label}${c.coefficient && c.coefficient !== 1 ? ` ×${c.coefficient}` : ""}</th>`));
+      criteriaInRows.forEach(
+        (c) =>
+          (html += `<th>${c.category ? `${escapeHtml(c.category)} · ` : ""}${escapeHtml(c.label)}${
+            c.coefficient && c.coefficient !== 1 ? ` ×${c.coefficient}` : ""
+          }</th>`)
+      );
       html += `</tr></thead><tbody>`;
 
       voters.forEach(([voterId, voterName]) => {

@@ -221,3 +221,15 @@
 .assignment-view {
   margin-top: 20px;
 }
+// --- Sélection au toucher (déplacer / échanger un jour) ---
+
+.calendar-chip-selected {
+  outline: 2px solid var(--text);
+  outline-offset: 1px;
+}
+
+.calendar-day-target {
+  border-style: dashed;
+  border-color: var(--muted);
+  cursor: pointer;
+}

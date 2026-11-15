@@ -1,0 +1,186 @@
+// ============================================================
+// BOÎTE DE DIALOGUE (archivage d'une édition)
+// ============================================================
+
+.app-dialog {
+  width: min(440px, calc(100vw - 32px));
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--card);
+  color: var(--text);
+
+  &::backdrop {
+    background: rgba(0, 0, 0, 0.55);
+  }
+}
+
+.app-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 28px 24px 24px;
+}
+
+.app-dialog-title {
+  margin: -10px 0 0;
+  font-size: 1.25rem;
+}
+
+.app-dialog-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  input[type="text"] {
+    width: 100%;
+    background: var(--bg);
+  }
+}
+
+.app-dialog-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  cursor: pointer;
+
+  input[type="checkbox"] {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    margin: 2px 0 0;
+    accent-color: var(--accent);
+  }
+
+  > span {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 0.9rem;
+  }
+}
+
+.app-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+// ============================================================
+// LIENS VERS L'HISTORIQUE
+// ============================================================
+
+.results-editions-link,
+.home-editions-link,
+.panel-editions-link {
+  font-size: 0.85rem;
+  color: var(--muted);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+
+  &:hover {
+    color: var(--text);
+  }
+}
+
+.results-editions-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 6px;
+  text-decoration: none;
+
+  svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.home-editions-link {
+  align-self: center;
+  margin-top: 28px;
+}
+
+// ============================================================
+// PAGE ÉDITIONS PASSÉES
+// ============================================================
+
+.editions-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 4px;
+  margin-bottom: 24px;
+}
+
+.editions-title {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.editions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.edition-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 14px 16px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s;
+
+  &:hover {
+    border-color: var(--accent);
+  }
+}
+
+.edition-card-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.edition-card-label {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.edition-card-meta {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.edition-card-score {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.edition-detail-subtitle {
+  font-size: 0.85rem;
+  color: var(--muted);
+}

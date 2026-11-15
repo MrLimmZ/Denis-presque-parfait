@@ -27,7 +27,11 @@ app.use(express.static(path.join(__dirname, "public")));
 // de dépendre d'un CDN externe, qui peut être inaccessible selon le réseau (ex:
 // instance Home Assistant sans accès internet direct depuis le LAN, ou bloqué par
 // une extension/proxy côté client).
-app.use("/vendor/jspdf", express.static(path.join(__dirname, "node_modules", "jspdf", "dist")));
+const NODE_MODULES = path.join(__dirname, "node_modules");
+app.use("/vendor/jspdf", express.static(path.join(NODE_MODULES, "jspdf", "dist")));
+app.use("/vendor/barba", express.static(path.join(NODE_MODULES, "@barba", "core", "dist")));
+app.use("/vendor/gsap", express.static(path.join(NODE_MODULES, "gsap", "dist")));
+app.use("/vendor/html2canvas", express.static(path.join(NODE_MODULES, "html2canvas", "dist")));
 
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: "/ws", maxPayload: 5 * 1024 * 1024 });
@@ -39,9 +43,13 @@ function broadcast(data) {
   });
 }
 
+// Participants, équipes et "cuisiniers" non planifiés évoluent ensemble (un
+// participant qui change d'équipe, une équipe supprimée...) : on les diffuse
+// toujours en bloc.
 function broadcastParticipants() {
   broadcast({ type: "participants", list: db.listParticipants() });
-  broadcast({ type: "participants:unassigned", list: db.listUnassignedParticipants() });
+  broadcast({ type: "teams", list: db.listTeams() });
+  broadcast({ type: "cooks:unassigned", list: db.listUnassignedCooks() });
 }
 
 function broadcastCriteria() {
@@ -58,8 +66,21 @@ function broadcastSetupStatus() {
 
 let wasGameComplete = false;
 
+// Message décrivant la phase de la partie ("playing" | "bonus" | "done"). En phase
+// bonus, il contient l'avancement (qui a voté, jamais pour qui) et la liste des
+// cuisiniers à qui on peut donner son point.
+function phasePayload(status) {
+  return {
+    type: "game:phase",
+    phase: status.phase,
+    bonus: status.phase === "bonus" ? status.bonus : null,
+    cooks: status.phase === "bonus" ? db.listCooks() : null,
+  };
+}
+
 function checkAndBroadcastGameStatus() {
   const status = db.computeGameStatus();
+  broadcast(phasePayload(status));
 
   if (status.complete && !wasGameComplete) {
     wasGameComplete = true;
@@ -70,35 +91,35 @@ function checkAndBroadcastGameStatus() {
   }
 }
 
-function broadcastAssignmentUpdateFor(date, participantId, hasVotes) {
-  const participant = participantId ? db.getParticipant(participantId) : null;
-  broadcast({
-    type: "assignments:update",
-    date,
-    participant_id: participantId || null,
-    participant_name: participant ? participant.name : null,
-    avatar_icon: participant ? participant.avatar_icon : null,
-    avatar_color: participant ? participant.avatar_color : null,
-    avatar_image: participant ? participant.avatar_image : null,
-    has_votes: !!hasVotes,
-  });
+// Diffuse l'état d'un jour du calendrier (assignment = cuisinier normalisé, ou
+// null si le jour est libre).
+function broadcastAssignmentUpdateFor(date) {
+  broadcast({ type: "assignments:update", date, assignment: db.getAssignmentForDate(date) });
 }
 
-function broadcastAbsenceUpdateFor(date, targetParticipantId, voterParticipantId, absent) {
+function broadcastAbsenceUpdateFor(date, targetId, voterParticipantId, absent) {
   broadcast({
     type: "absences:update",
     date,
-    target_participant_id: targetParticipantId,
+    target_id: targetId,
     voter_participant_id: voterParticipantId,
     absent: !!absent,
   });
 }
 
+// Le calendrier entier change (changement de mode, tirage des équipes...) : les
+// clients rechargent le mois affiché.
+function broadcastCalendarReload() {
+  broadcast({ type: "assignments:reload" });
+}
+
 wss.on("connection", (ws) => {
   ws.send(JSON.stringify({ type: "participants", list: db.listParticipants() }));
-  ws.send(JSON.stringify({ type: "participants:unassigned", list: db.listUnassignedParticipants() }));
+  ws.send(JSON.stringify({ type: "teams", list: db.listTeams() }));
+  ws.send(JSON.stringify({ type: "cooks:unassigned", list: db.listUnassignedCooks() }));
   ws.send(JSON.stringify({ type: "criteria", list: db.listCriteria() }));
   ws.send(JSON.stringify({ type: "setup:status", status: db.getSetupStatus() }));
+  ws.send(JSON.stringify({ type: "theme", theme: db.getTheme() }));
 
   ws.on("message", (raw) => {
     let msg;
@@ -117,30 +138,47 @@ wss.on("connection", (ws) => {
   });
 });
 
+function sendError(ws, type, message) {
+  ws.send(JSON.stringify({ type, message }));
+}
+
 function handleMessage(ws, msg) {
+  // --- Thème visuel (réglage global, appliqué en direct sur tous les écrans) ---
+  // Les avatars dépendent du thème : on rediffuse tout ce qui en affiche.
+  if (msg.type === "theme:set" && db.setTheme(msg.theme).ok) {
+    broadcast({ type: "theme", theme: msg.theme });
+    broadcastParticipants();
+    broadcastCalendarReload();
+  }
+
+  // --- Mode de jeu (solo / équipes) ---
+  if (msg.type === "mode:set" && typeof msg.mode === "string") {
+    const result = db.setMode(msg.mode);
+    if (!result.ok) return sendError(ws, "mode:error", result.error);
+    broadcastParticipants();
+    broadcastSetupStatus();
+    broadcastCalendarReload();
+  }
+
   // --- Participants ---
   if (msg.type === "participants:add" && typeof msg.name === "string" && msg.name.trim()) {
     const result = db.addParticipant(msg.name.trim());
-    if (!result.ok) {
-      ws.send(JSON.stringify({ type: "participants:error", message: result.error }));
-    } else {
-      broadcastParticipants();
-      broadcastSetupStatus();
-    }
+    if (!result.ok) return sendError(ws, "participants:error", result.error);
+    broadcastParticipants();
+    broadcastSetupStatus();
   }
 
   if (msg.type === "participants:rename" && msg.id && typeof msg.name === "string" && msg.name.trim()) {
     const result = db.renameParticipant(msg.id, msg.name.trim());
-    if (!result.ok) {
-      ws.send(JSON.stringify({ type: "participants:error", message: result.error }));
-    } else {
-      broadcastParticipants();
-    }
+    if (!result.ok) return sendError(ws, "participants:error", result.error);
+    broadcastParticipants();
+    broadcastCalendarReload();
   }
 
   if (msg.type === "participants:avatar:color" && msg.id && typeof msg.color === "string") {
     db.setParticipantAvatarColor(msg.id, msg.color);
     broadcastParticipants();
+    broadcastCalendarReload();
   }
 
   if (
@@ -150,16 +188,64 @@ function handleMessage(ws, msg) {
   ) {
     db.setParticipantAvatarImage(msg.id, msg.image);
     broadcastParticipants();
+    broadcastCalendarReload();
   }
 
   if (msg.type === "participants:delete" && msg.id) {
     db.deleteParticipant(msg.id);
     broadcastParticipants();
     broadcastSetupStatus();
+    broadcastCalendarReload();
     checkAndBroadcastGameStatus();
   }
 
-  // --- Assignations ---
+  // --- Équipes ---
+  if (msg.type === "teams:add") {
+    const result = db.addTeam(msg.name);
+    if (!result.ok) return sendError(ws, "teams:error", result.error);
+    broadcastParticipants();
+    broadcastSetupStatus();
+  }
+
+  if (msg.type === "teams:rename" && msg.id) {
+    const result = db.renameTeam(msg.id, msg.name);
+    if (!result.ok) return sendError(ws, "teams:error", result.error);
+    broadcastParticipants();
+    broadcastCalendarReload();
+  }
+
+  if (msg.type === "teams:color" && msg.id && typeof msg.color === "string") {
+    db.setTeamColor(msg.id, msg.color);
+    broadcastParticipants();
+    broadcastCalendarReload();
+  }
+
+  if (msg.type === "teams:delete" && msg.id) {
+    const result = db.deleteTeam(msg.id);
+    if (!result.ok) return sendError(ws, "teams:error", result.error);
+    broadcastParticipants();
+    broadcastSetupStatus();
+    broadcastCalendarReload();
+  }
+
+  if (msg.type === "teams:set_member" && msg.participant_id) {
+    const teamId = msg.team_id ? Number(msg.team_id) : null;
+    const result = db.setParticipantTeam(Number(msg.participant_id), teamId);
+    if (!result.ok) return sendError(ws, "teams:error", result.error);
+    broadcastParticipants();
+    broadcastSetupStatus();
+    broadcastCalendarReload();
+  }
+
+  if (msg.type === "teams:random") {
+    const result = db.randomizeTeams(msg.count);
+    if (!result.ok) return sendError(ws, "teams:error", result.error);
+    broadcastParticipants();
+    broadcastSetupStatus();
+    broadcastCalendarReload();
+  }
+
+  // --- Assignations (un "cuisinier" = participant en solo, équipe en mode équipes) ---
   if (msg.type === "assignments:list" && typeof msg.month === "string") {
     ws.send(
       JSON.stringify({
@@ -175,38 +261,36 @@ function handleMessage(ws, msg) {
     ws.send(JSON.stringify({ type: "assignments:get", date: msg.date, assignment: assignment || null }));
   }
 
-  if (msg.type === "assignments:get_for_participant" && msg.participant_id) {
-    const assignment = db.getAssignmentForParticipant(msg.participant_id);
+  if (msg.type === "assignments:get_for_cook" && msg.cook_id) {
+    const assignment = db.getAssignmentForCook(msg.cook_id);
     ws.send(
       JSON.stringify({
-        type: "assignments:get_for_participant",
-        participant_id: msg.participant_id,
+        type: "assignments:get_for_cook",
+        cook_id: msg.cook_id,
         date: assignment ? assignment.date : null,
       })
     );
   }
 
-  if (msg.type === "assignments:set" && typeof msg.date === "string" && msg.participant_id) {
-    const result = db.setAssignment(msg.date, msg.participant_id);
-    if (!result.ok) {
-      ws.send(JSON.stringify({ type: "assignments:error", message: result.error }));
-    } else {
-      broadcastAssignmentUpdateFor(msg.date, msg.participant_id, false);
-      broadcastParticipants();
-      broadcastSetupStatus();
-      checkAndBroadcastGameStatus();
-    }
+  if (msg.type === "assignments:set" && typeof msg.date === "string" && msg.cook_id) {
+    // Mémorise l'ancien jour du cuisinier : en cas d'échange ou de déplacement, il
+    // faut aussi diffuser la mise à jour de ce jour-là.
+    const previous = db.getAssignmentForCook(msg.cook_id);
+    const result = db.setAssignment(msg.date, msg.cook_id);
+    if (!result.ok) return sendError(ws, "assignments:error", result.error);
+    broadcastAssignmentUpdateFor(msg.date);
+    if (previous && previous.date !== msg.date) broadcastAssignmentUpdateFor(previous.date);
+    broadcastParticipants();
+    broadcastSetupStatus();
+    checkAndBroadcastGameStatus();
   }
 
   if (msg.type === "assignments:delete" && typeof msg.date === "string") {
     const result = db.deleteAssignment(msg.date);
-    if (!result.ok) {
-      ws.send(JSON.stringify({ type: "assignments:error", message: result.error }));
-    } else {
-      broadcastAssignmentUpdateFor(msg.date, null, false);
-      broadcastParticipants();
-      broadcastSetupStatus();
-    }
+    if (!result.ok) return sendError(ws, "assignments:error", result.error);
+    broadcastAssignmentUpdateFor(msg.date);
+    broadcastParticipants();
+    broadcastSetupStatus();
   }
 
   if (msg.type === "assignments:random") {
@@ -218,7 +302,7 @@ function handleMessage(ws, msg) {
 
   // --- Critères de notation ---
   if (msg.type === "criteria:add" && typeof msg.label === "string" && msg.label.trim() && msg.max_note) {
-    db.addCriterion(msg.label.trim(), Number(msg.max_note), Number(msg.coefficient) || 1);
+    db.addCriterion(msg.label.trim(), Number(msg.max_note), Number(msg.coefficient) || 1, msg.category);
     broadcastCriteria();
     broadcastSetupStatus();
   }
@@ -230,55 +314,49 @@ function handleMessage(ws, msg) {
     msg.label.trim() &&
     msg.max_note
   ) {
-    db.updateCriterion(msg.id, msg.label.trim(), Number(msg.max_note), Number(msg.coefficient) || 1);
+    db.updateCriterion(msg.id, msg.label.trim(), Number(msg.max_note), Number(msg.coefficient) || 1, msg.category);
     broadcastCriteria();
   }
 
   if (msg.type === "criteria:delete" && msg.id) {
     const result = db.deleteCriterion(msg.id);
-    if (!result.ok) {
-      ws.send(JSON.stringify({ type: "criteria:error", message: result.error }));
-    } else {
-      broadcastCriteria();
-      broadcastSetupStatus();
-    }
+    if (!result.ok) return sendError(ws, "criteria:error", result.error);
+    broadcastCriteria();
+    broadcastSetupStatus();
   }
 
   if (msg.type === "criteria:move" && msg.id && (msg.direction === "up" || msg.direction === "down")) {
     const result = db.moveCriterion(msg.id, msg.direction);
-    if (!result.ok) {
-      ws.send(JSON.stringify({ type: "criteria:error", message: result.error }));
-    } else {
-      broadcastCriteria();
-    }
+    if (!result.ok) return sendError(ws, "criteria:error", result.error);
+    broadcastCriteria();
   }
 
   // --- Votes ---
+  // La cible est déduite du calendrier côté serveur (voir db.submitVotes).
   if (
     msg.type === "votes:submit" &&
     typeof msg.date === "string" &&
     msg.voter_participant_id &&
-    msg.target_participant_id &&
     Array.isArray(msg.scores)
   ) {
-    db.submitVotes(msg.date, msg.voter_participant_id, msg.target_participant_id, msg.scores);
+    const result = db.submitVotes(msg.date, msg.voter_participant_id, msg.scores);
+    if (!result.ok) return sendError(ws, "votes:error", result.error);
     ws.send(JSON.stringify({ type: "votes:submitted" }));
     broadcastVotes();
     broadcastParticipants();
     broadcastSetupStatus();
-
-    broadcastAssignmentUpdateFor(msg.date, msg.target_participant_id, true);
+    broadcastAssignmentUpdateFor(msg.date);
 
     broadcast({
       type: "votes:voter_update",
       date: msg.date,
-      target_participant_id: msg.target_participant_id,
+      target_id: result.target_id,
       voter_participant_id: msg.voter_participant_id,
     });
 
-    // La personne a voté : elle n'est plus "absente" pour ce jour/cible (géré aussi
-    // côté db.submitVotes, mais on informe les clients connectés du changement d'état).
-    broadcastAbsenceUpdateFor(msg.date, msg.target_participant_id, msg.voter_participant_id, false);
+    // La personne a voté : elle n'est plus "absente" pour ce jour (géré aussi côté
+    // db.submitVotes, mais on informe les clients connectés du changement d'état).
+    broadcastAbsenceUpdateFor(msg.date, result.target_id, msg.voter_participant_id, false);
 
     checkAndBroadcastGameStatus();
   }
@@ -296,13 +374,14 @@ function handleMessage(ws, msg) {
     );
   }
 
-  if (msg.type === "votes:voters_for_date" && typeof msg.date === "string" && msg.target_participant_id) {
+  if (msg.type === "votes:voters_for_date" && typeof msg.date === "string") {
+    const assignment = db.getAssignmentForDate(msg.date);
     ws.send(
       JSON.stringify({
         type: "votes:voters_for_date",
         date: msg.date,
-        target_participant_id: msg.target_participant_id,
-        voter_ids: db.listVotersForDateTarget(msg.date, msg.target_participant_id),
+        target_id: assignment ? assignment.cook_id : null,
+        voter_ids: db.listVoterIdsForDate(msg.date),
       })
     );
   }
@@ -310,39 +389,28 @@ function handleMessage(ws, msg) {
   // --- Absences ---
   // Permet d'exempter un votant absent un jour donné, pour que la partie
   // puisse tout de même être déclarée terminée sans son vote.
-  if (
-    msg.type === "absences:mark" &&
-    typeof msg.date === "string" &&
-    msg.voter_participant_id &&
-    msg.target_participant_id
-  ) {
-    const result = db.markAbsent(msg.date, msg.voter_participant_id, msg.target_participant_id);
-    if (!result.ok) {
-      ws.send(JSON.stringify({ type: "absences:error", message: result.error }));
-    } else {
-      broadcastAbsenceUpdateFor(msg.date, msg.target_participant_id, msg.voter_participant_id, true);
-      checkAndBroadcastGameStatus();
-    }
-  }
-
-  if (
-    msg.type === "absences:unmark" &&
-    typeof msg.date === "string" &&
-    msg.voter_participant_id &&
-    msg.target_participant_id
-  ) {
-    db.unmarkAbsent(msg.date, msg.voter_participant_id, msg.target_participant_id);
-    broadcastAbsenceUpdateFor(msg.date, msg.target_participant_id, msg.voter_participant_id, false);
+  if (msg.type === "absences:mark" && typeof msg.date === "string" && msg.voter_participant_id) {
+    const result = db.markAbsent(msg.date, msg.voter_participant_id);
+    if (!result.ok) return sendError(ws, "absences:error", result.error);
+    broadcastAbsenceUpdateFor(msg.date, result.target_id, msg.voter_participant_id, true);
     checkAndBroadcastGameStatus();
   }
 
-  if (msg.type === "absences:list_for_date_target" && typeof msg.date === "string" && msg.target_participant_id) {
+  if (msg.type === "absences:unmark" && typeof msg.date === "string" && msg.voter_participant_id) {
+    db.unmarkAbsent(msg.date, msg.voter_participant_id);
+    const assignment = db.getAssignmentForDate(msg.date);
+    broadcastAbsenceUpdateFor(msg.date, assignment ? assignment.cook_id : null, msg.voter_participant_id, false);
+    checkAndBroadcastGameStatus();
+  }
+
+  if (msg.type === "absences:list_for_date" && typeof msg.date === "string") {
+    const assignment = db.getAssignmentForDate(msg.date);
     ws.send(
       JSON.stringify({
-        type: "absences:list_for_date_target",
+        type: "absences:list_for_date",
         date: msg.date,
-        target_participant_id: msg.target_participant_id,
-        voter_ids: db.listAbsentVoterIdsForDateTarget(msg.date, msg.target_participant_id),
+        target_id: assignment ? assignment.cook_id : null,
+        voter_ids: db.listAbsentVoterIdsForDate(msg.date),
       })
     );
   }
@@ -350,6 +418,10 @@ function handleMessage(ws, msg) {
   // --- Requêtes explicites de données ---
   if (msg.type === "participants:list") {
     ws.send(JSON.stringify({ type: "participants", list: db.listParticipants() }));
+  }
+
+  if (msg.type === "teams:list") {
+    ws.send(JSON.stringify({ type: "teams", list: db.listTeams() }));
   }
 
   if (msg.type === "criteria:list") {
@@ -368,9 +440,29 @@ function handleMessage(ws, msg) {
       JSON.stringify({
         type: "game:status",
         complete: status.complete,
+        phase: status.phase,
         results: status.complete ? db.getResults() : null,
       })
     );
+    ws.send(JSON.stringify(phasePayload(status)));
+  }
+
+  // --- Point bonus ---
+  if (msg.type === "bonus:submit" && msg.voter_participant_id && msg.target_id) {
+    const result = db.submitBonus(msg.voter_participant_id, msg.target_id);
+    if (!result.ok) return sendError(ws, "bonus:error", result.error);
+    ws.send(JSON.stringify({ type: "bonus:mine", target_id: Number(msg.target_id) }));
+    checkAndBroadcastGameStatus();
+  }
+
+  if (msg.type === "bonus:get_mine" && msg.voter_participant_id) {
+    ws.send(JSON.stringify({ type: "bonus:mine", target_id: db.getBonusVote(msg.voter_participant_id) }));
+  }
+
+  if (msg.type === "bonus:close") {
+    const result = db.closeBonus();
+    if (!result.ok) return sendError(ws, "bonus:error", result.error);
+    checkAndBroadcastGameStatus();
   }
 
   // --- Éditions archivées ---
@@ -381,16 +473,24 @@ function handleMessage(ws, msg) {
     if (!status.complete) {
       ws.send(JSON.stringify({ type: "editions:error", message: "La partie n'est pas encore terminée, impossible de l'archiver." }));
     } else {
+      const keepParticipants = msg.keep_participants === true;
+      const keepCriteria = msg.keep_criteria === true;
       const edition = db.archiveCurrentEdition(typeof msg.label === "string" ? msg.label : "");
-      db.resetDatabase();
+      db.resetForNewEdition({ keepParticipants, keepCriteria });
       wasGameComplete = false;
 
+      // "editions:archived" part en premier : le panel s'en sert pour recalculer
+      // l'étape du wizard à afficher dès le "setup:status" qui suit.
+      broadcast({
+        type: "editions:archived",
+        edition: { id: edition.id, label: edition.label, mode: edition.mode },
+        keep_participants: keepParticipants,
+        keep_criteria: keepCriteria,
+      });
       broadcastParticipants();
       broadcastCriteria();
       broadcastVotes();
       broadcastSetupStatus();
-      broadcast({ type: "editions:archived", edition });
-      broadcast({ type: "db:reset:done" });
       // Diffuse explicitement le nouveau statut (forcément incomplet juste après
       // un reset) : les pages résultats/jeu connectées se redirigent alors
       // automatiquement vers l'accueil via leur écouteur "game:status" existant.
@@ -410,6 +510,7 @@ function handleMessage(ws, msg) {
   if (msg.type === "db:reset") {
     db.resetDatabase();
     wasGameComplete = false;
+    broadcastCalendarReload();
     broadcastParticipants();
     broadcastCriteria();
     broadcastVotes();
@@ -477,6 +578,11 @@ function handleMessage(ws, msg) {
 
 server.listen(PORT, () => {
   console.log(`Denis Presque Parfait - serveur lancé sur le port ${PORT}`);
+  // Le "jour en cours" (votes, fin de partie) dépend du fuseau du serveur : le
+  // Supervisor HA injecte TZ avec le fuseau du système, on le logue pour vérifier.
+  console.log(
+    `[TZ] TZ=${process.env.TZ || "(non défini)"} · fuseau résolu: ${Intl.DateTimeFormat().resolvedOptions().timeZone} · aujourd'hui: ${db.todayStr()}`
+  );
 
   // Vérifie le statut de la partie au démarrage (utile si le serveur a redémarré
   // alors que la partie était déjà terminée) puis toutes les 15 minutes, afin que

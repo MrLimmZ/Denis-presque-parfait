@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Éditions passées - Un Denis Presque Parfait</title>
+  <link rel="stylesheet" href="style.css" />
+  <script>
+    // Applique le dernier thème connu avant l'affichage (évite un flash au chargement).
+    try { var t = localStorage.getItem("denis_theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+  </script>
+</head>
+<body>
+  <div class="page-loader" id="page-loader">
+    <span class="share-spinner"></span>
+  </div>
+
+  <div id="app-logo"></div>
+
+  <div data-barba="wrapper">
+    <main class="wrap" data-barba="container" data-barba-namespace="editions">
+      <button id="editions-back-btn" class="fab fab-left" title="Retour">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M19 12H5M5 12L12 19M5 12L12 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+
+      <section id="editions-list-view">
+        <header class="editions-header">
+          <span class="state-card-eyebrow">Historique</span>
+          <h1 class="editions-title">Éditions passées</h1>
+        </header>
+        <div class="editions-list" id="editions-list"></div>
+      </section>
+
+      <section id="edition-detail-view" style="display: none;">
+        <header class="editions-header">
+          <span class="state-card-eyebrow" id="edition-detail-date"></span>
+          <h1 class="editions-title" id="edition-detail-title"></h1>
+          <span class="edition-detail-subtitle" id="edition-detail-subtitle"></span>
+        </header>
+        <div class="podium" id="edition-podium"></div>
+        <div class="ranking-list" id="edition-ranking-list"></div>
+      </section>
+    </main>
+  </div>
+
+  <script src="vendor/barba/barba.umd.js"></script>
+  <script src="vendor/gsap/gsap.min.js"></script>
+  <script src="vendor/html2canvas/html2canvas.min.js"></script>
+  <script src="client.js"></script>
+  <script src="theme.js"></script>
+  <script src="avatar.js"></script>
+  <script src="logo.js"></script>
+  <script src="splash.js"></script>
+  <script src="share.js"></script>
+  <script src="calendar.js"></script>
+  <script src="rating.js"></script>
+  <script src="resultsView.js"></script>
+  <script src="pages.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

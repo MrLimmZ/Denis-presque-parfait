@@ -76,9 +76,12 @@ function cropImageFileToDataUrl(file, targetSize = 240, quality = 0.85) {
 // --- Sélecteur : couleur OU photo perso ---
 // onChange reçoit soit { mode: "color", color }, soit { mode: "image", image },
 // soit { mode: "remove" } (retire la photo, retombe sur la couleur déjà enregistrée).
-function createAvatarPicker({ container, color, image, onChange }) {
+// themeLabel (ex : "de Noël") : la photo importée/retirée ne concerne que ce thème ;
+// themedImage indique si le joueur a déjà une photo propre à ce thème.
+function createAvatarPicker({ container, color, image, onChange, themeLabel = null, themedImage = false }) {
   let selectedColor = color || DEFAULT_AVATAR_COLOR;
   const hasImage = !!image;
+  const canRemove = themeLabel ? themedImage : hasImage;
 
   container.innerHTML = "";
   container.className = "avatar-picker";
@@ -121,7 +124,11 @@ function createAvatarPicker({ container, color, image, onChange }) {
 
   const uploadLabel = document.createElement("label");
   uploadLabel.className = "avatar-picker-upload-btn";
-  uploadLabel.textContent = hasImage ? "Changer la photo" : "Importer une photo";
+  uploadLabel.textContent = themeLabel
+    ? `${themedImage ? "Changer" : "Importer"} l'avatar ${themeLabel}`
+    : hasImage
+    ? "Changer la photo"
+    : "Importer une photo";
 
   const fileInput = document.createElement("input");
   fileInput.type = "file";
@@ -153,11 +160,11 @@ function createAvatarPicker({ container, color, image, onChange }) {
   uploadLabel.appendChild(fileInput);
   imageSection.appendChild(uploadLabel);
 
-  if (hasImage) {
+  if (canRemove) {
     const removeBtn = document.createElement("button");
     removeBtn.type = "button";
     removeBtn.className = "avatar-picker-remove-btn";
-    removeBtn.textContent = "Retirer la photo";
+    removeBtn.textContent = themeLabel ? `Retirer l'avatar ${themeLabel}` : "Retirer la photo";
     removeBtn.addEventListener("click", () => onChange({ mode: "remove" }));
     imageSection.appendChild(removeBtn);
   }

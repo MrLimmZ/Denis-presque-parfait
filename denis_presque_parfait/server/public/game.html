@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Un Denis Presque Parfait</title>
   <link rel="stylesheet" href="style.css" />
+  <script>
+    // Applique le dernier thème connu avant l'affichage (évite un flash au chargement).
+    try { var t = localStorage.getItem("denis_theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+  </script>
 </head>
 <body>
   <div class="page-loader" id="page-loader">
@@ -30,16 +34,18 @@
     </main>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@barba/core@2.10.3/dist/barba.umd.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="vendor/barba/barba.umd.js"></script>
+  <script src="vendor/gsap/gsap.min.js"></script>
+  <script src="vendor/html2canvas/html2canvas.min.js"></script>
   <script src="client.js"></script>
+  <script src="theme.js"></script>
   <script src="avatar.js"></script>
   <script src="logo.js"></script>
   <script src="splash.js"></script>
   <script src="share.js"></script>
   <script src="calendar.js"></script>
   <script src="rating.js"></script>
+  <script src="resultsView.js"></script>
   <script src="pages.js"></script>
   <script src="app.js"></script>
 </body>

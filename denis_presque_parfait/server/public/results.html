@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Résultats - Un Denis Presque Parfait</title>
   <link rel="stylesheet" href="style.css" />
+  <script>
+    // Applique le dernier thème connu avant l'affichage (évite un flash au chargement).
+    try { var t = localStorage.getItem("denis_theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+  </script>
 </head>
 <body>
   <div class="page-loader" id="page-loader">
@@ -32,28 +36,81 @@
         <div class="podium" id="podium"></div>
         <div class="ranking-list" id="ranking-list"></div>
         <div class="results-actions">
-          <button id="download-pdf-btn" class="btn btn-secondary results-download-btn">
-            Télécharger les résultats en PDF
+          <button id="archive-edition-btn" class="btn btn-primary results-action-btn">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            <span class="btn-label">Lancer une nouvelle édition</span>
           </button>
-          <button id="archive-edition-btn" class="btn btn-secondary results-archive-btn">
-            Sauvegarder cette édition et en commencer une nouvelle
+          <button id="download-pdf-btn" class="btn btn-secondary results-action-btn">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span class="btn-label">Télécharger le PDF</span>
           </button>
+          <a href="editions.html" class="results-editions-link">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M3 12a9 9 0 1 0 3-6.7L3 8m0-5v5h5M12 7v5l3 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            Voir les éditions passées
+          </a>
+          <p class="hint results-actions-hint">
+            « Nouvelle édition » sauvegarde ce classement dans l'historique avant de repartir.
+          </p>
         </div>
       </div>
+
+      <dialog id="archive-dialog" class="app-dialog">
+        <form id="archive-form" class="app-dialog-body">
+          <span class="state-card-eyebrow">Nouvelle édition</span>
+          <h2 class="app-dialog-title">Sauvegarder cette édition</h2>
+
+          <label class="app-dialog-field">
+            <span class="label">Nom de l'édition</span>
+            <input id="archive-label-input" type="text" maxlength="60" placeholder="Ex : Été 2026" autocomplete="off" />
+          </label>
+
+          <div class="app-dialog-field">
+            <span class="label">Pour la prochaine édition</span>
+            <label class="app-dialog-check">
+              <input id="archive-keep-participants" type="checkbox" checked />
+              <span>
+                <strong>Garder les participants</strong>
+                <span class="hint">Avec leurs avatars. Il ne restera qu'à replacer les dates.</span>
+              </span>
+            </label>
+            <label class="app-dialog-check">
+              <input id="archive-keep-criteria" type="checkbox" />
+              <span>
+                <strong>Garder les critères de notation</strong>
+                <span class="hint">Décoché : tu redéfiniras les critères dans le panel.</span>
+              </span>
+            </label>
+            <span class="hint">Les votes et le calendrier repartent toujours de zéro.</span>
+          </div>
+
+          <div class="app-dialog-actions">
+            <button type="button" id="archive-cancel-btn" class="btn btn-secondary">Annuler</button>
+            <button type="submit" class="btn btn-primary">Sauvegarder</button>
+          </div>
+        </form>
+      </dialog>
     </main>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@barba/core@2.10.3/dist/barba.umd.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="vendor/barba/barba.umd.js"></script>
+  <script src="vendor/gsap/gsap.min.js"></script>
+  <script src="vendor/html2canvas/html2canvas.min.js"></script>
   <script src="vendor/jspdf/jspdf.umd.min.js"></script>
   <script src="client.js"></script>
+  <script src="theme.js"></script>
   <script src="avatar.js"></script>
   <script src="logo.js"></script>
   <script src="splash.js"></script>
   <script src="share.js"></script>
   <script src="calendar.js"></script>
   <script src="rating.js"></script>
+  <script src="resultsView.js"></script>
   <script src="pages.js"></script>
   <script src="app.js"></script>
 </body>

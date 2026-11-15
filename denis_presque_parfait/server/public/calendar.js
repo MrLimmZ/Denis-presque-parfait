@@ -1,8 +1,34 @@
-function createCalendar({ container, editable = false, today = null, onAssign, onUnassign, onMonthChange, onError } = {}) {
+function createCalendar({
+  container,
+  editable = false,
+  allowRemove = true,
+  today = null,
+  onAssign,
+  onUnassign,
+  onMonthChange,
+  onError,
+} = {}) {
   const todayStr = today || (typeof todayDateString === "function" ? todayDateString() : null);
   const now = new Date();
   let currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   let assignmentsByDate = {};
+  // Sélection au toucher (le drag & drop HTML5 ne marche pas sur mobile) : on
+  // touche un cuisinier, puis le jour où le déplacer / avec qui l'échanger.
+  let selected = null; // { date, cook_id }
+
+  // Appelle onAssign avec l'occupant éventuel du jour cible (pour confirmer un échange).
+  function requestAssign(targetDate, cookId) {
+    const occupant = assignmentsByDate[targetDate];
+    const sourceDate = Object.keys(assignmentsByDate).find(
+      (d) => String(assignmentsByDate[d].cook_id) === String(cookId)
+    );
+    if (occupant && String(occupant.cook_id) === String(cookId)) return;
+    onAssign &&
+      onAssign(targetDate, Number(cookId), {
+        occupant: occupant || null,
+        source: sourceDate ? { date: sourceDate, ...assignmentsByDate[sourceDate] } : null,
+      });
+  }
 
   const WEEKDAYS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
 
@@ -109,14 +135,37 @@ function createCalendar({ container, editable = false, today = null, onAssign, o
 
         const nameSpan = document.createElement("span");
         nameSpan.className = "calendar-chip-name";
-        nameSpan.textContent = assignment.participant_name;
+        nameSpan.textContent = assignment.cook_name;
+        if (assignment.kind === "team") {
+          chip.classList.add("calendar-chip-team");
+          chip.title = `${assignment.cook_name} : ${(assignment.members || []).map((m) => m.name).join(", ")}`;
+        }
         chip.appendChild(nameSpan);
+
+        const isSelected = selected && selected.date === dateStr;
+        if (isSelected) chip.classList.add("calendar-chip-selected");
+
+        if (editable && !isLocked && !isPast) {
+          chip.addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (selected && selected.date !== dateStr) {
+              // Un autre cuisinier était sélectionné : on l'échange avec celui-ci.
+              const cookId = selected.cook_id;
+              selected = null;
+              requestAssign(dateStr, cookId);
+              render();
+              return;
+            }
+            selected = isSelected ? null : { date: dateStr, cook_id: assignment.cook_id };
+            render();
+          });
+        }
 
         if (editable && !isLocked) {
           chip.draggable = true;
           chip.classList.add("calendar-chip-draggable");
           chip.addEventListener("dragstart", (e) => {
-            e.dataTransfer.setData("text/participant-id", assignment.participant_id);
+            e.dataTransfer.setData("text/cook-id", assignment.cook_id);
             e.stopPropagation();
           });
 
@@ -128,7 +177,7 @@ function createCalendar({ container, editable = false, today = null, onAssign, o
             e.stopPropagation();
             onUnassign && onUnassign(dateStr);
           });
-          chip.appendChild(removeBtn);
+          if (allowRemove) chip.appendChild(removeBtn);
         }
 
         cell.appendChild(chip);
@@ -149,11 +198,21 @@ function createCalendar({ container, editable = false, today = null, onAssign, o
           e.preventDefault();
           cell.classList.remove("calendar-day-dragover");
           if (!canDrop) return;
-          const participantId = e.dataTransfer.getData("text/participant-id");
-          if (participantId) {
-            onAssign && onAssign(dateStr, Number(participantId));
+          const cookId = e.dataTransfer.getData("text/cook-id");
+          if (cookId) {
+            selected = null;
+            requestAssign(dateStr, Number(cookId));
           }
         });
+
+        cell.addEventListener("click", () => {
+          if (!selected || !canDrop) return;
+          const cookId = selected.cook_id;
+          selected = null;
+          requestAssign(dateStr, cookId);
+          render();
+        });
+        if (selected && canDrop && !assignment) cell.classList.add("calendar-day-target");
       }
 
       grid.appendChild(cell);
@@ -185,32 +244,26 @@ function createCalendar({ container, editable = false, today = null, onAssign, o
     getCurrentMonthKey() {
       return monthKey(currentMonth);
     },
+    // Pré-sélectionne un cuisinier pas encore planifié (pastille touchée sur mobile) :
+    // le prochain jour touché lui sera attribué.
+    selectCook(cookId) {
+      selected = cookId ? { date: null, cook_id: cookId } : null;
+      render();
+    },
     setAssignments(month, list) {
       if (month !== monthKey(currentMonth)) return;
       assignmentsByDate = {};
       (list || []).forEach((a) => {
-        assignmentsByDate[a.date] = {
-          participant_id: a.participant_id,
-          participant_name: a.participant_name,
-          has_votes: !!a.has_votes,
-          avatar_icon: a.avatar_icon,
-          avatar_color: a.avatar_color,
-          avatar_image: a.avatar_image,
-        };
+        assignmentsByDate[a.date] = { ...a, has_votes: !!a.has_votes };
       });
       render();
     },
-    applyUpdate(date, participantId, participantName, hasVotes, avatarIcon, avatarColor, avatarImage) {
+    // assignment : cuisinier normalisé envoyé par le serveur ({ cook_id, cook_name,
+    // kind, members, avatar_*, has_votes }), ou null si le jour est libéré.
+    applyUpdate(date, assignment) {
       if (!date.startsWith(monthKey(currentMonth))) return;
-      if (participantId) {
-        assignmentsByDate[date] = {
-          participant_id: participantId,
-          participant_name: participantName,
-          has_votes: !!hasVotes,
-          avatar_icon: avatarIcon,
-          avatar_color: avatarColor,
-          avatar_image: avatarImage,
-        };
+      if (assignment) {
+        assignmentsByDate[date] = { ...assignment, has_votes: !!assignment.has_votes };
       } else {
         delete assignmentsByDate[date];
       }

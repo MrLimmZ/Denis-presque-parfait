@@ -37,7 +37,7 @@ function seedFakeCompletedGame() {
   // Chaque participant note tous les autres, sur la date réellement assignée à la cible.
   const assignmentByParticipant = {};
   participants.forEach((p) => {
-    assignmentByParticipant[p.id] = db.getAssignmentForParticipant(p.id).date;
+    assignmentByParticipant[p.id] = db.getAssignmentForCook(p.id).date;
   });
 
   participants.forEach((target) => {
@@ -48,7 +48,7 @@ function seedFakeCompletedGame() {
           criterion_id: c.id,
           score: 1 + Math.floor(Math.random() * c.max_note),
         }));
-        db.submitVotes(assignmentByParticipant[target.id], voter.id, target.id, scores);
+        db.submitVotes(assignmentByParticipant[target.id], voter.id, scores);
       });
   });
 

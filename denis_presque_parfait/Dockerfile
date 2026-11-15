@@ -5,7 +5,7 @@ WORKDIR /app
 RUN apk add --no-cache \
     python3 make g++ \
     chromium ffmpeg \
-    ca-certificates ttf-freefont nss freetype harfbuzz
+    ca-certificates ttf-freefont nss freetype harfbuzz tzdata
 
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
