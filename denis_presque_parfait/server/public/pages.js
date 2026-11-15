@@ -162,6 +162,135 @@ function mountSanta(container) {
 }
 
 // ============================================================
+// Détecteur de rageux (pour rire) : avant l'envoi de notes très basses
+// ============================================================
+const RAGE_MESSAGES = [
+  "Tes notes sont… disons, glaciales. Tu confirmes que c'est le plat qui parle, et pas la rancune ?",
+  "Nos capteurs détectent une forte odeur de vengeance. Le plat était-il vraiment si terrible ?",
+  "Attention : ce niveau de sévérité est généralement observé chez les rageux de l'édition précédente.",
+  "Le Père Noël voit tout. Même les 2/10 mis par dépit. Tu es sûr de toi ?",
+  "Respire un grand coup… Bois un verre d'eau… Et maintenant, tu maintiens ces notes ?",
+];
+
+// Seuils : moyenne sous 4,5/10, ou au moins une note à 2/10 ou moins (en proportion
+// de la note max de chaque critère).
+function isRageVote(result, criteria) {
+  const ratios = result
+    .map((r) => {
+      const c = criteria.find((x) => x.id === r.criterion_id);
+      return c && c.max_note ? r.score / c.max_note : null;
+    })
+    .filter((x) => x !== null);
+  if (ratios.length === 0) return null;
+  const avg = ratios.reduce((a, b) => a + b, 0) / ratios.length;
+  const harshest = Math.min(...ratios);
+  if (avg >= 0.45 && harshest > 0.2) return null;
+  // Niveau de rage affiché : plus les notes sont basses, plus il grimpe.
+  return Math.min(99, Math.round(((1 - avg) * 0.7 + (1 - harshest) * 0.3) * 100));
+}
+
+// Diagnostic loufoque affiché ligne par ligne (choisi selon le niveau de rage).
+function rageDiagnosis(level) {
+  const lines = [
+    ["Mauvaise foi", level > 70 ? "très élevée" : "élevée"],
+    ["Traces de rancune", "détectées"],
+    ["Papilles", level > 80 ? "en grève" : "suspectes"],
+    ["Probabilité de bouderie", `${Math.min(99, level + 7)} %`],
+  ];
+  return lines.sort(() => Math.random() - 0.5).slice(0, 3);
+}
+
+function showRageDetector(level) {
+  return new Promise((resolve) => {
+    const dialog = document.createElement("dialog");
+    dialog.className = "app-dialog rage-dialog";
+    const message = RAGE_MESSAGES[Math.floor(Math.random() * RAGE_MESSAGES.length)];
+    const diagnosis = rageDiagnosis(level)
+      .map(([label, value], i) => `<li style="animation-delay:${1.2 + i * 0.35}s"><span>${label}</span><strong>${value}</strong><em>✔</em></li>`)
+      .join("");
+    dialog.innerHTML = `
+      <div class="app-dialog-body rage-body">
+        <div class="rage-siren" aria-hidden="true">🚨</div>
+        <span class="state-card-eyebrow rage-eyebrow">Alerte générale</span>
+        <h2 class="app-dialog-title rage-title">Détecteur de rageux</h2>
+        <div class="rage-meter" role="img" aria-label="Niveau de rage : ${level} %">
+          <div class="rage-meter-head">
+            <span>Niveau de rage <span class="rage-face" aria-hidden="true">😇</span></span>
+            <strong class="rage-meter-value">0 %</strong>
+          </div>
+          <div class="rage-meter-track"><div class="rage-meter-fill"></div></div>
+        </div>
+        <div class="rage-diagnosis">
+          <span class="rage-diagnosis-title">Diagnostic</span>
+          <ul>${diagnosis}</ul>
+        </div>
+        <p class="rage-message">${escapeHtml(message)}</p>
+        <div class="app-dialog-actions rage-actions">
+          <button type="button" class="btn btn-secondary" data-choice="review">Je revois mes notes 😇</button>
+          <button type="button" class="btn btn-primary rage-confirm" data-choice="confirm">J'assume, c'était pas bon 😤</button>
+        </div>
+        <div class="rage-stamp" aria-hidden="true">Rageux<br />certifié</div>
+      </div>`;
+    document.body.appendChild(dialog);
+
+    let done = false;
+    const close = (confirmed) => {
+      if (done) return;
+      done = true;
+      dialog.close();
+      dialog.remove();
+      resolve(confirmed);
+    };
+
+    dialog.querySelector('[data-choice="review"]').addEventListener("click", () => close(false));
+
+    // "J'assume" s'esquive au premier essai, puis se laisse attraper ; le tampon
+    // "Rageux certifié" s'abat avant l'envoi.
+    const confirmBtn = dialog.querySelector('[data-choice="confirm"]');
+    let dodged = false;
+    confirmBtn.addEventListener("click", () => {
+      if (!dodged) {
+        dodged = true;
+        confirmBtn.classList.add("rage-dodge");
+        confirmBtn.textContent = "Hé, pas si vite ! 🏃";
+        setTimeout(() => {
+          confirmBtn.classList.remove("rage-dodge");
+          confirmBtn.textContent = "Bon… j'assume vraiment 😤";
+        }, 900);
+        return;
+      }
+      confirmBtn.disabled = true;
+      dialog.querySelector('[data-choice="review"]').disabled = true;
+      dialog.classList.add("is-stamped");
+      setTimeout(() => close(true), 1300);
+    });
+
+    dialog.addEventListener("cancel", (e) => {
+      e.preventDefault();
+      close(false);
+    });
+    dialog.showModal();
+
+    // La jauge grimpe jusqu'au niveau détecté, la tête s'énerve en chemin.
+    const fill = dialog.querySelector(".rage-meter-fill");
+    const value = dialog.querySelector(".rage-meter-value");
+    const face = dialog.querySelector(".rage-face");
+    const faces = [[0, "😇"], [25, "🙂"], [45, "😒"], [60, "😠"], [75, "😡"], [88, "🤬"]];
+    requestAnimationFrame(() => (fill.style.width = `${level}%`));
+    const start = performance.now();
+    const tick = (now) => {
+      // (Le premier horodatage d'animation peut précéder `start` : on borne à 0.)
+      const t = Math.max(0, Math.min(1, (now - start) / 1100));
+      const current = Math.round(level * (1 - Math.pow(1 - t, 3)));
+      value.textContent = `${current} %`;
+      face.textContent = faces.filter(([min]) => current >= min).pop()[1];
+      if (t < 1 && dialog.isConnected) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+}
+
+// ============================================================
 // HOME (index.html) — sélection du participant
 // ============================================================
 PageModules.register("home", {
@@ -727,6 +856,10 @@ PageModules.register("game", {
       activeRatingFlow = createRatingFlow({
         container: ratingContainer,
         criteria: criteriaList,
+        confirmBeforeComplete: (result) => {
+          const rage = isRageVote(result, criteriaList);
+          return rage === null ? Promise.resolve(true) : showRageDetector(rage);
+        },
         onComplete: (scores) => {
           activeRatingFlow = null;
           AppWS.send({

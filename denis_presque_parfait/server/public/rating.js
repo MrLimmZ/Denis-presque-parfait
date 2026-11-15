@@ -1,4 +1,6 @@
-function createRatingFlow({ container, criteria, onComplete }) {
+// confirmBeforeComplete(result) : facultatif, renvoie une promesse de booléen.
+// false = on reste sur le formulaire (notes conservées), true = on envoie.
+function createRatingFlow({ container, criteria, onComplete, confirmBeforeComplete }) {
   let currentStep = 0;
   const scores = {}; // criterion_id -> score
 
@@ -240,9 +242,15 @@ function createRatingFlow({ container, criteria, onComplete }) {
     nextBtn.className = "rating-nav-btn";
     nextBtn.textContent = isLast ? "Terminer" : "Suivant";
     nextBtn.disabled = scores[criterion.id] === undefined;
-    nextBtn.addEventListener("click", () => {
+    nextBtn.addEventListener("click", async () => {
       if (isLast) {
         const result = criteria.map((c) => ({ criterion_id: c.id, score: scores[c.id] }));
+        if (confirmBeforeComplete) {
+          nextBtn.disabled = true;
+          const confirmed = await confirmBeforeComplete(result);
+          nextBtn.disabled = false;
+          if (!confirmed) return;
+        }
         destroy();
         onComplete && onComplete(result);
       } else {
