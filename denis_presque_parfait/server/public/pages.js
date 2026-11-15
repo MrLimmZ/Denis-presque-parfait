@@ -25,6 +25,143 @@ const PageModules = (function () {
 })();
 
 // ============================================================
+// Clin d'œil de Noël : le Père Noël et sa bulle (accueil, thème Noël)
+// ============================================================
+// Message général aux "rageux" (personne n'est visé) ; un tap fait défiler.
+const SANTA_MESSAGES = [
+  "Oh oh oh ! Cette année, le Père Noël surveille les rageux… Une mauvaise note par vengeance, et c'est du charbon sous le sapin !",
+  "Oh oh oh ! Petit rappel : on note le plat, pas la rancune de l'an dernier. 😉",
+  "Un 2/10 par dépit ? Oh oh oh… Je note tout dans mon carnet, moi aussi !",
+  "Ici on note avec les papilles, pas avec les nerfs. Les rageux sont prévenus ! 🎅",
+  "Liste des sages ou liste des rageux ? Ce sont tes notes qui décideront… 🎁",
+];
+
+function mountSanta(container) {
+  let el = null;
+  let index = Math.floor(Math.random() * SANTA_MESSAGES.length);
+  let timers = [];
+  let typing = false;
+  const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  const later = (fn, ms) => timers.push(setTimeout(fn, ms));
+  const clearTimers = () => {
+    timers.forEach(clearTimeout);
+    timers = [];
+  };
+
+  // Affiche un message : "en train d'écrire…" puis frappe lettre par lettre.
+  // La version complète (invisible) réserve la place : la bulle ne bouge pas.
+  function say(message) {
+    clearTimers();
+    const ghost = el.querySelector(".santa-bubble-ghost");
+    const typed = el.querySelector(".santa-bubble-typed");
+    const bubble = el.querySelector(".santa-bubble");
+    ghost.textContent = message;
+    typed.textContent = "";
+    el.querySelectorAll(".santa-bubble-dot").forEach((d, i) => d.classList.toggle("active", i === index));
+
+    if (reduceMotion) {
+      typed.textContent = message;
+      typing = false;
+      return;
+    }
+
+    typing = true;
+    bubble.classList.add("is-typing");
+    later(() => {
+      bubble.classList.remove("is-typing");
+      const chars = [...message];
+      let i = 0;
+      const step = () => {
+        i += 1;
+        typed.textContent = chars.slice(0, i).join("");
+        if (i < chars.length) {
+          // Petite pause après la ponctuation, pour un rythme de parole naturel.
+          const pause = /[.!?…,]/.test(chars[i - 1]) ? 170 : 24;
+          later(step, pause);
+        } else {
+          typing = false;
+        }
+      };
+      step();
+    }, 750);
+  }
+
+  function next() {
+    if (!el) return;
+    const typed = el.querySelector(".santa-bubble-typed");
+    // Toucher pendant la frappe : on affiche directement le message complet.
+    if (typing) {
+      clearTimers();
+      el.querySelector(".santa-bubble").classList.remove("is-typing");
+      typed.textContent = SANTA_MESSAGES[index];
+      typing = false;
+      return;
+    }
+    index = (index + 1) % SANTA_MESSAGES.length;
+    const figure = el.querySelector(".santa-figure");
+    figure.classList.remove("santa-hop");
+    void figure.offsetWidth; // relance l'animation
+    figure.classList.add("santa-hop");
+    say(SANTA_MESSAGES[index]);
+  }
+
+  function show() {
+    if (el || ThemeManager.get() !== "christmas") return;
+    el = document.createElement("div");
+    el.className = "santa";
+    el.innerHTML = `
+      <div class="santa-bubble" role="button" tabindex="0" aria-live="polite" aria-label="Message du Père Noël, touche pour le suivant">
+        <span class="santa-bubble-name">🎅 Le Père Noël</span>
+        <p class="santa-bubble-text">
+          <span class="santa-bubble-ghost" aria-hidden="true"></span>
+          <span class="santa-bubble-typed"></span>
+          <span class="santa-typing" aria-hidden="true"><i></i><i></i><i></i></span>
+        </p>
+        <span class="santa-bubble-footer">
+          <span class="santa-bubble-dots">${SANTA_MESSAGES.map(() => `<span class="santa-bubble-dot"></span>`).join("")}</span>
+          <span class="santa-bubble-hint">touche pour la suite</span>
+        </span>
+      </div>
+      <button type="button" class="santa-figure" aria-label="Message suivant du Père Noël">
+        <img src="santa.webp" alt="" width="387" height="440" />
+      </button>`;
+    const bubble = el.querySelector(".santa-bubble");
+    bubble.addEventListener("click", next);
+    bubble.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        next();
+      }
+    });
+    el.querySelector(".santa-figure").addEventListener("click", next);
+    container.appendChild(el);
+    container.classList.add("has-santa");
+
+    // Le Père Noël arrive, puis la bulle éclot et il commence à "écrire".
+    el.querySelector(".santa-bubble-ghost").textContent = SANTA_MESSAGES[index];
+    later(() => say(SANTA_MESSAGES[index]), reduceMotion ? 0 : 1350);
+  }
+
+  function hide() {
+    clearTimers();
+    if (!el) return;
+    el.remove();
+    el = null;
+    container.classList.remove("has-santa");
+  }
+
+  const onThemeChange = () => (ThemeManager.get() === "christmas" ? show() : hide());
+  document.addEventListener("themechange", onThemeChange);
+  show();
+
+  return () => {
+    document.removeEventListener("themechange", onThemeChange);
+    hide();
+  };
+}
+
+// ============================================================
 // HOME (index.html) — sélection du participant
 // ============================================================
 PageModules.register("home", {
@@ -191,8 +328,9 @@ PageModules.register("home", {
     AppWS.send({ type: "editions:list" });
 
     const cleanupDecor = () => document.body.classList.remove("has-home-decor");
+    const cleanupSanta = mountSanta(container);
 
-    return [offParticipants, offSetupStatus, offGameStatus, offGameComplete, offEditionsList, cleanupDecor];
+    return [offParticipants, offSetupStatus, offGameStatus, offGameComplete, offEditionsList, cleanupDecor, cleanupSanta];
   },
 });
 
@@ -233,6 +371,14 @@ PageModules.register("game", {
     let redirecting = false;
     let gameStatusKnown = false;
     let activeRatingFlow = null;
+
+    // Compte à rebours jusqu'au prochain repas (ou au début de l'édition).
+    let nextMeal; // undefined = pas encore demandé, sinon { date, started }
+    let countdownTimer = null;
+    const stopCountdown = () => {
+      if (countdownTimer) clearInterval(countdownTimer);
+      countdownTimer = null;
+    };
 
     // Phase bonus : une fois tous les repas notés, chacun donne un point bonus secret.
     let phase = null; // "playing" | "bonus" | "done"
@@ -437,8 +583,60 @@ PageModules.register("game", {
       reveal();
     }
 
+    function renderCountdown() {
+      stopCountdown();
+      if (!nextMeal || !nextMeal.date) {
+        contentEl.innerHTML = `<p class="hint">Pas de repas prévu aujourd'hui.</p>`;
+        return;
+      }
+      const [y, m, d] = nextMeal.date.split("-").map(Number);
+      const target = new Date(y, m - 1, d, 0, 0, 0).getTime();
+      const dayLabel = new Date(y, m - 1, d).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+
+      contentEl.innerHTML = `
+        <div class="state-card countdown-card">
+          <span class="state-card-eyebrow">${nextMeal.started ? "Prochain repas" : "Début de l'édition"}</span>
+          <h2 class="state-card-title">${nextMeal.started ? "Prochain repas dans" : "Le jeu commence dans"}</h2>
+          <div class="countdown-grid" role="timer" aria-live="off">
+            <div class="countdown-unit"><span class="countdown-value" data-unit="d">0</span><span class="countdown-label" data-label="d">jours</span></div>
+            <div class="countdown-unit"><span class="countdown-value" data-unit="h">00</span><span class="countdown-label" data-label="h">heures</span></div>
+            <div class="countdown-unit"><span class="countdown-value" data-unit="m">00</span><span class="countdown-label">min</span></div>
+            <div class="countdown-unit"><span class="countdown-value" data-unit="s">00</span><span class="countdown-label">sec</span></div>
+          </div>
+          <p class="state-card-subtitle">Rendez-vous le ${escapeHtml(dayLabel)}.</p>
+        </div>`;
+
+      const els = {};
+      contentEl.querySelectorAll(".countdown-value").forEach((el) => (els[el.dataset.unit] = el));
+      const pad = (n) => String(n).padStart(2, "0");
+      const dayLabelEl = contentEl.querySelector('[data-label="d"]');
+      const hourLabelEl = contentEl.querySelector('[data-label="h"]');
+
+      function tick() {
+        const diff = target - Date.now();
+        if (diff <= 0) {
+          // Le jour J est arrivé : on recharge pour repartir sur la bonne date du jour.
+          stopCountdown();
+          window.location.reload();
+          return;
+        }
+        const total = Math.floor(diff / 1000);
+        const days = Math.floor(total / 86400);
+        const hours = Math.floor((total % 86400) / 3600);
+        els.d.textContent = days;
+        els.h.textContent = pad(hours);
+        dayLabelEl.textContent = days > 1 ? "jours" : "jour";
+        hourLabelEl.textContent = hours > 1 ? "heures" : "heure";
+        els.m.textContent = pad(Math.floor((total % 3600) / 60));
+        els.s.textContent = pad(total % 60);
+      }
+      tick();
+      countdownTimer = setInterval(tick, 1000);
+    }
+
     function renderContent() {
       if (!assignmentLoaded || !criteriaLoaded) return;
+      stopCountdown();
 
       if (activeRatingFlow) {
         activeRatingFlow.destroy();
@@ -451,7 +649,11 @@ PageModules.register("game", {
       }
 
       if (!todaysAssignment) {
-        contentEl.innerHTML = `<p class="hint">Pas de repas prévu aujourd'hui.</p>`;
+        if (nextMeal === undefined) {
+          nextMeal = null;
+          AppWS.send({ type: "assignments:next", date: today });
+        }
+        renderCountdown();
         showCalendar();
         reveal();
         return;
@@ -637,6 +839,8 @@ PageModules.register("game", {
         return;
       }
       if (data.date === today) todaysAssignment = data.assignment;
+      // Le calendrier a bougé : le prochain repas a peut-être changé.
+      if (!todaysAssignment) AppWS.send({ type: "assignments:next", date: today });
     });
 
     // Calendrier entièrement modifié (mode, équipes...) : on recharge le mois et
@@ -645,6 +849,7 @@ PageModules.register("game", {
       AppWS.send({ type: "assignments:list", month: calendar.getCurrentMonthKey() });
       alreadyVoted = null;
       AppWS.send({ type: "assignments:get", date: today });
+      AppWS.send({ type: "assignments:next", date: today });
     });
 
     const offGameStatus = AppWS.on("game:status", (data) => {
@@ -687,6 +892,12 @@ PageModules.register("game", {
 
     const offBonusError = AppWS.on("bonus:error", (data) => alert(data.message));
 
+    const offNextMeal = AppWS.on("assignments:next", (data) => {
+      if (data.from !== today) return;
+      nextMeal = { date: data.date, started: data.started };
+      if (!todaysAssignment && phase !== "bonus") renderContent();
+    });
+
     AppWS.send({ type: "participants:list" });
     AppWS.send({ type: "criteria:list" });
     AppWS.send({ type: "game:status" });
@@ -717,6 +928,8 @@ PageModules.register("game", {
       offGamePhase,
       offBonusMine,
       offBonusError,
+      offNextMeal,
+      stopCountdown,
       cleanupRatingBar,
     ];
   },

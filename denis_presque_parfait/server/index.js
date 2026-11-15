@@ -1,4 +1,5 @@
 const path = require("path");
+const fs = require("fs");
 const http = require("http");
 const express = require("express");
 const { WebSocketServer } = require("ws");
@@ -20,6 +21,63 @@ if (process.env.NODE_ENV !== "production") {
 
   app.use(connectLivereload());
 }
+
+// --- Pages HTML : thème et balises meta injectés côté serveur ---
+// Les aperçus de lien (iMessage, WhatsApp...) ne lisent que le HTML brut, sans
+// exécuter de JS : l'image et la description du thème actif doivent donc y être
+// écrites par le serveur. On pose aussi data-theme sur <html>, ce qui évite tout
+// flash du mauvais thème au chargement.
+const HTML_PAGES = ["index.html", "game.html", "results.html", "editions.html", "panel.html"];
+const THEME_META = {
+  classic: {
+    color: "#15161a",
+    title: "Un Denis Presque Parfait",
+    description: "Le jeu de cuisine en famille : chacun cuisine, tout le monde note.",
+  },
+  christmas: {
+    color: "#0e1c16",
+    title: "Un Denis Presque Parfait · Édition de Noël 🎄",
+    description: "L'édition de Noël : chacun cuisine, tout le monde note.",
+  },
+};
+
+function escapeAttr(value) {
+  return String(value).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+}
+
+function renderHtmlPage(file, req) {
+  const theme = db.getTheme();
+  const meta = THEME_META[theme] || THEME_META.classic;
+  // URL absolue de la bannière (exigée par Open Graph), en tenant compte du
+  // préfixe Ingress de Home Assistant quand la page passe par la sidebar.
+  const proto = (req.get("x-forwarded-proto") || req.protocol).split(",")[0];
+  const host = req.get("x-forwarded-host") || req.get("host");
+  const ingressPath = (req.get("x-ingress-path") || "").replace(/\/$/, "");
+  const image = `${proto}://${host}${ingressPath}/banner-${theme}.png`;
+
+  const tags = `
+  <meta name="theme-color" content="${meta.color}" />
+  <meta name="description" content="${escapeAttr(meta.description)}" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Un Denis Presque Parfait" />
+  <meta property="og:title" content="${escapeAttr(meta.title)}" />
+  <meta property="og:description" content="${escapeAttr(meta.description)}" />
+  <meta property="og:image" content="${escapeAttr(image)}" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:image" content="${escapeAttr(image)}" />
+  <link rel="icon" type="image/png" href="icon.png" />
+`;
+  const html = fs.readFileSync(path.join(__dirname, "public", file), "utf8");
+  return html.replace('<html lang="fr">', `<html lang="fr" data-theme="${theme}">`).replace("</head>", `${tags}</head>`);
+}
+
+app.get(["/", ...HTML_PAGES.map((p) => `/${p}`)], (req, res) => {
+  const file = req.path === "/" ? "index.html" : req.path.slice(1);
+  res.set("Cache-Control", "no-cache");
+  res.type("html").send(renderHtmlPage(file, req));
+});
 
 app.use(express.static(path.join(__dirname, "public")));
 
@@ -259,6 +317,10 @@ function handleMessage(ws, msg) {
   if (msg.type === "assignments:get" && typeof msg.date === "string") {
     const assignment = db.getAssignmentForDate(msg.date);
     ws.send(JSON.stringify({ type: "assignments:get", date: msg.date, assignment: assignment || null }));
+  }
+
+  if (msg.type === "assignments:next" && typeof msg.date === "string") {
+    ws.send(JSON.stringify({ type: "assignments:next", from: msg.date, ...db.getNextMealFrom(msg.date) }));
   }
 
   if (msg.type === "assignments:get_for_cook" && msg.cook_id) {

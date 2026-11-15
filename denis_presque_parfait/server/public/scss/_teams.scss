@@ -476,3 +476,17 @@
   font-size: 0.72rem;
   color: var(--muted);
 }
+
+// Avatars des membres d'une équipe, superposés (pastilles du calendrier, du panel).
+.avatar-stack {
+  display: inline-flex;
+  flex-shrink: 0;
+
+  .avatar + .avatar {
+    margin-left: -6px;
+  }
+
+  .avatar {
+    box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.25);
+  }
+}

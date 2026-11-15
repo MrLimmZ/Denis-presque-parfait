@@ -1,2 +1,4 @@
 server/node_modules
 server/data
+server/public/videos
+server/public/style.css.map

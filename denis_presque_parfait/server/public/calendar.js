@@ -128,10 +128,11 @@ function createCalendar({
         } else if (isPast && !isLocked) {
           chip.classList.add("calendar-chip-missed");
         } else {
-          chip.style.background = assignment.avatar_color || "var(--accent)";
+          chip.style.background =
+            typeof ThemeManager !== "undefined" ? ThemeManager.cookColor(assignment) : assignment.avatar_color || "var(--accent)";
         }
 
-        chip.appendChild(createAvatarElement(assignment, "xs"));
+        chip.appendChild(createCookAvatarElement(assignment, "xs"));
 
         const nameSpan = document.createElement("span");
         nameSpan.className = "calendar-chip-name";
@@ -235,6 +236,17 @@ function createCalendar({
     render();
     onMonthChange && onMonthChange(monthKey(currentMonth));
   }
+
+  // Les couleurs des pastilles dépendent du thème : on redessine au changement.
+  // (Le calendrier d'une page quittée se désabonne de lui-même.)
+  function onThemeChange() {
+    if (!container.isConnected) {
+      document.removeEventListener("themechange", onThemeChange);
+      return;
+    }
+    render();
+  }
+  document.addEventListener("themechange", onThemeChange);
 
   return {
     init() {

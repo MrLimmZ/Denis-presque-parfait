@@ -44,6 +44,18 @@ function createAvatarElement(participant, size = "md") {
   return span;
 }
 
+// Avatar d'un "cuisinier" : pour une équipe, les avatars de ses membres
+// légèrement superposés ; pour une personne, son avatar habituel.
+function createCookAvatarElement(cook, size = "xs") {
+  if (!cook || cook.kind !== "team" || !cook.members || cook.members.length === 0) {
+    return createAvatarElement(cook, size);
+  }
+  const stack = document.createElement("span");
+  stack.className = `avatar-stack avatar-stack-${size}`;
+  cook.members.forEach((m) => stack.appendChild(createAvatarElement(m, size)));
+  return stack;
+}
+
 // --- Recadrage/compression d'une image uploadée en carré, côté navigateur ---
 // Évite d'envoyer/stocker des photos de plusieurs Mo : sortie ~10-25 Ko en JPEG.
 function cropImageFileToDataUrl(file, targetSize = 240, quality = 0.85) {

@@ -110,6 +110,14 @@ const ThemeManager = (function () {
     if (theme === current) return;
     current = theme;
     document.documentElement.dataset.theme = theme;
+    // Couleur de la barre du navigateur mobile, alignée sur le fond du thème.
+    let themeColorMeta = document.querySelector('meta[name="theme-color"]');
+    if (!themeColorMeta) {
+      themeColorMeta = document.createElement("meta");
+      themeColorMeta.name = "theme-color";
+      document.head.appendChild(themeColorMeta);
+    }
+    themeColorMeta.content = theme === "christmas" ? "#0e1c16" : "#15161a";
     if (effects) effects.stop();
     effects = document.body ? startEffects(theme) : null;
     document.dispatchEvent(new CustomEvent("themechange", { detail: { theme } }));
@@ -117,6 +125,19 @@ const ThemeManager = (function () {
 
   function get() {
     return current || document.documentElement.dataset.theme || "classic";
+  }
+
+  // Couleur d'étiquette d'un cuisinier (pastilles du calendrier, du panel...).
+  // En thème Noël, on remplace les couleurs de marque par une palette de Noël,
+  // stable pour un même cuisinier (choisie d'après son identifiant) et assez
+  // foncée pour garder le texte blanc lisible.
+  const CHRISTMAS_COLORS = ["#c1121f", "#2d6a4f", "#a8741a", "#7b1e2c", "#40916c", "#9d0208", "#1b4332", "#8a5a12"];
+
+  function cookColor(cook) {
+    const base = (cook && cook.avatar_color) || "var(--accent)";
+    if (get() !== "christmas" || !cook) return base;
+    const id = Number(cook.cook_id != null ? cook.cook_id : cook.id) || 1;
+    return CHRISTMAS_COLORS[(id - 1) % CHRISTMAS_COLORS.length];
   }
 
   function init() {
@@ -127,5 +148,5 @@ const ThemeManager = (function () {
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
   else init();
 
-  return { apply, get };
+  return { apply, get, cookColor };
 })();

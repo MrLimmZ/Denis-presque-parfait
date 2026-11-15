@@ -7,7 +7,8 @@
   <link rel="stylesheet" href="style.css" />
   <script>
     // Applique le dernier thème connu avant l'affichage (évite un flash au chargement).
-    try { var t = localStorage.getItem("denis_theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+    // (Le serveur pose déjà data-theme ; ce repli ne sert que si la page est servie telle quelle.)
+    try { var t = localStorage.getItem("denis_theme"); if (t && !document.documentElement.dataset.theme) document.documentElement.dataset.theme = t; } catch (e) {}
   </script>
 </head>
 <body>

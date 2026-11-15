@@ -7,7 +7,8 @@
   <link rel="stylesheet" href="style.css" />
   <script>
     // Applique le dernier thème connu avant l'affichage (évite un flash au chargement).
-    try { var t = localStorage.getItem("denis_theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+    // (Le serveur pose déjà data-theme ; ce repli ne sert que si la page est servie telle quelle.)
+    try { var t = localStorage.getItem("denis_theme"); if (t && !document.documentElement.dataset.theme) document.documentElement.dataset.theme = t; } catch (e) {}
   </script>
 </head>
 <body>
@@ -525,7 +526,11 @@
     // --- Thème visuel (appliqué en direct sur tous les écrans connectés) ---
     const themeSelect = document.getElementById("theme-select");
     themeSelect.value = ThemeManager.get();
-    document.addEventListener("themechange", (e) => (themeSelect.value = e.detail.theme));
+    document.addEventListener("themechange", (e) => {
+      themeSelect.value = e.detail.theme;
+      renderDraggableCooks();
+      renderTeams();
+    });
     themeSelect.addEventListener("change", () => {
       ws.send(JSON.stringify({ type: "theme:set", theme: themeSelect.value }));
     });
@@ -723,9 +728,9 @@
         const pill = document.createElement("div");
         pill.className = "draggable-pill";
         if (pendingCookId === c.cook_id) pill.classList.add("draggable-pill-selected");
-        pill.style.background = c.avatar_color || "var(--accent)";
+        pill.style.background = ThemeManager.cookColor(c);
 
-        pill.appendChild(createAvatarElement(c, "xs"));
+        pill.appendChild(createCookAvatarElement(c, "xs"));
         const nameSpan = document.createElement("span");
         nameSpan.textContent = c.kind === "team" ? `${c.cook_name} (${c.members.length})` : c.cook_name;
         pill.appendChild(nameSpan);
@@ -778,7 +783,7 @@
       currentTeams.forEach((t) => {
         const card = document.createElement("div");
         card.className = "team-card";
-        card.style.setProperty("--team-color", t.avatar_color);
+        card.style.setProperty("--team-color", ThemeManager.cookColor(t));
 
         const header = document.createElement("div");
         header.className = "team-card-header";

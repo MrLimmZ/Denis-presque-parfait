@@ -585,6 +585,17 @@ function getAssignmentForDate(date) {
   return row ? normalizeAssignment(date, row.cook_id) : null;
 }
 
+// Prochain jour de repas à partir de `date` (inclus), et si l'édition a déjà
+// commencé (au moins un jour de repas avant `date`). Sert au compte à rebours.
+function getNextMealFrom(date) {
+  const col = cookColumn();
+  const next = db
+    .prepare(`SELECT date FROM assignments WHERE date >= ? AND ${col} IS NOT NULL ORDER BY date ASC LIMIT 1`)
+    .get(date);
+  const started = !!db.prepare(`SELECT 1 FROM assignments WHERE date < ? AND ${col} IS NOT NULL LIMIT 1`).get(date);
+  return { date: next ? next.date : null, started };
+}
+
 function getAssignmentForCook(cookId) {
   return db.prepare(`SELECT date FROM assignments WHERE ${cookColumn()} = ?`).get(cookId);
 }
@@ -1346,6 +1357,7 @@ module.exports = {
   listAssignmentsForMonth,
   getAssignmentForDate,
   getAssignmentForCook,
+  getNextMealFrom,
   setAssignment,
   swapAssignments,
   deleteAssignment,
